@@ -27,3 +27,16 @@ export interface Note {
   lines: CalculationLine[];
   lastModified: string;
 }
+
+export interface Result {
+  formatted: string;
+  unit?: string;
+  conversions?: { unit: string; display: string }[];
+}
+
+export interface Line {
+  id: string;
+  input: string;
+  result?: Result;
+  error?: string;
+}
