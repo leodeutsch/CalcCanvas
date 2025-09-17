@@ -1,14 +1,11 @@
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useMemo } from "react";
 import {
   Animated,
   Keyboard,
-  KeyboardAvoidingView,
   LayoutChangeEvent,
   PanResponder,
-  Platform,
   ScrollView,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -16,15 +13,19 @@ import {
 import { PlusSignIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import type { Theme } from "../../styles/theme";
-import type { Note } from "../../types";
+import type { CalculationLine, Note } from "../../types";
+import { FloatingInputEditor } from "../FloatingInputEditor";
 import { createStyles } from "./styles";
+
+// Add this constant
+const MAX_LINES_PER_SHEET = 3;
 
 interface CalculationSheetProps {
   theme: Theme;
   note: Note;
   onChangeLine: (lineId: string, value: string) => void;
   onAddLine: () => void;
-  onDeleteLine: (lineId: string) => void; // Added
+  onDeleteLine: (lineId: string) => void;
 }
 
 export const CalculationSheet: React.FC<CalculationSheetProps> = ({
@@ -35,23 +36,14 @@ export const CalculationSheet: React.FC<CalculationSheetProps> = ({
   onDeleteLine,
 }) => {
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const placeholderColor = theme.colors.secondaryText;
-  const scrollViewRef = useRef<ScrollView>(null); // Ref to control ScrollView
+  const placeholderColor = String(theme.colors.secondaryText);
 
-  // Dismiss focus when keyboard hides
-  useEffect(() => {
-    const keyboardDidHideListener = Keyboard.addListener(
-      "keyboardDidHide",
-      () => {
-        // Dismiss keyboard focus to ensure inputs lose focus
-        Keyboard.dismiss();
-      }
-    );
+  const [editingLine, setEditingLine] = React.useState<CalculationLine | null>(
+    null
+  );
 
-    return () => {
-      keyboardDidHideListener.remove();
-    };
-  }, []);
+  // Check if we can add more lines
+  const canAddLine = note.lines.length < MAX_LINES_PER_SHEET;
 
   const SwipeableRow: React.FC<{
     onDelete: () => void;
@@ -68,6 +60,9 @@ export const CalculationSheet: React.FC<CalculationSheetProps> = ({
       () =>
         PanResponder.create({
           onMoveShouldSetPanResponder: (_evt, gesture) => {
+            // Don't allow swiping when editing
+            if (editingLine) return false;
+
             const dx = Math.abs(gesture.dx);
             const dy = Math.abs(gesture.dy);
             return dx > 6 && dx > dy;
@@ -103,7 +98,7 @@ export const CalculationSheet: React.FC<CalculationSheetProps> = ({
             }).start();
           },
         }),
-      [onDelete, translateX, width]
+      [onDelete, translateX, width, editingLine]
     );
 
     return (
@@ -121,36 +116,57 @@ export const CalculationSheet: React.FC<CalculationSheetProps> = ({
     );
   };
 
+  const handleInputFocus = (line: CalculationLine) => {
+    // Don't open if already editing
+    if (editingLine) return;
+
+    setEditingLine(line);
+  };
+
+  const handleFloatingSave = (lineId: string, value: string) => {
+    onChangeLine(lineId, value);
+    // Clear the editing state immediately
+    setEditingLine(null);
+  };
+
+  const handleFloatingCancel = () => {
+    // Clear the editing state immediately
+    setEditingLine(null);
+  };
+
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      style={{ flex: 1 }}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 64 : 0} // Adjust offset for iOS status bar/header
-    >
+    <>
       <ScrollView
-        ref={scrollViewRef}
         style={styles.container}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        onScrollBeginDrag={Keyboard.dismiss}
-        onTouchStart={Keyboard.dismiss}
+        scrollEnabled={!editingLine} // Disable scrolling when editing
+        onScrollBeginDrag={() => {
+          if (!editingLine) {
+            Keyboard.dismiss();
+          }
+        }}
+        onTouchStart={() => {
+          if (!editingLine) {
+            Keyboard.dismiss();
+          }
+        }}
       >
         {note.lines.map((line, index) => {
           const hasResult = Boolean(line.result);
-          const allowSwipe = note.lines.length > 1; // Disable swipe if only one
+          const allowSwipe = note.lines.length > 1;
 
           const Card = (
-            <View style={styles.card}>
-              <TextInput
-                style={styles.input}
-                value={line.input}
-                onChangeText={(text) => onChangeLine(line.id, text)}
-                placeholder="Type calculation..."
-                placeholderTextColor={placeholderColor}
-                multiline
-                onSubmitEditing={onAddLine}
-              />
+            <TouchableOpacity
+              style={styles.card}
+              onPress={() => handleInputFocus(line)}
+              activeOpacity={0.8}
+              disabled={!!editingLine} // Disable while editing
+            >
+              <Text style={styles.input}>
+                {line.input || "Type calculation..."}
+              </Text>
 
               {hasResult ? (
                 <>
@@ -185,7 +201,7 @@ export const CalculationSheet: React.FC<CalculationSheetProps> = ({
               {line.error ? (
                 <Text style={styles.errorText}>{line.error}</Text>
               ) : null}
-            </View>
+            </TouchableOpacity>
           );
 
           return allowSwipe ? (
@@ -199,16 +215,34 @@ export const CalculationSheet: React.FC<CalculationSheetProps> = ({
           );
         })}
 
-        <TouchableOpacity style={styles.addLineButton} onPress={onAddLine}>
-          <HugeiconsIcon
-            icon={PlusSignIcon}
-            color={theme.colors.primary}
-            size={16}
-            strokeWidth={3.5}
-          />
-          <Text style={styles.addLineText}>Add calculation</Text>
-        </TouchableOpacity>
+        {/* Only show the add button if we haven't reached the limit */}
+        {canAddLine && (
+          <TouchableOpacity
+            style={styles.addLineButton}
+            onPress={onAddLine}
+            disabled={!!editingLine} // Disable while editing
+          >
+            <HugeiconsIcon
+              icon={PlusSignIcon}
+              color={theme.colors.primary}
+              size={16}
+              strokeWidth={3.5}
+            />
+            <Text style={styles.addLineText}>Add calculation</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
-    </KeyboardAvoidingView>
+
+      {editingLine && (
+        <FloatingInputEditor
+          key={editingLine.id} // Force remount with key
+          theme={theme}
+          line={editingLine}
+          placeholderColor={placeholderColor}
+          onSave={handleFloatingSave}
+          onCancel={handleFloatingCancel}
+        />
+      )}
+    </>
   );
 };

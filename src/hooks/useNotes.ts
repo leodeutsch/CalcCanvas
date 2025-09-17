@@ -9,6 +9,9 @@ import { evaluateInput } from "../utils/evaluator";
 import { createBlankNote, createInitialNote, createLine } from "../utils/notes";
 import type { MarketDataState } from "./useMarketData";
 
+// Add this constant for the max lines per sheet
+const MAX_LINES_PER_SHEET = 3;
+
 interface NotesHook {
   notes: Note[];
   activeNote: Note | undefined;
@@ -19,9 +22,9 @@ interface NotesHook {
   addLine: (noteId: string) => void;
   addNote: () => void;
   deleteNote: (noteId: string) => void;
-  deleteLine: (noteId: string, lineId: string) => void; // Added
-  setPremium: (value: boolean) => Promise<void>; // Added
-  downgradeToFree: () => Promise<void>; // Added
+  deleteLine: (noteId: string, lineId: string) => void;
+  setPremium: (value: boolean) => Promise<void>;
+  downgradeToFree: () => Promise<void>;
 }
 
 const normalizeLegacyResult = (line: CalculationLine): CalculationLine => {
@@ -194,6 +197,18 @@ export const useNotes = (marketData: MarketDataState): NotesHook => {
   const addLine = useCallback(
     (noteId: string) => {
       setNotes((previousNotes) => {
+        const targetNote = previousNotes.find((note) => note.id === noteId);
+
+        // Check if the note already has the maximum number of lines
+        if (targetNote && targetNote.lines.length >= MAX_LINES_PER_SHEET) {
+          Alert.alert(
+            "Maximum calculations reached",
+            `You can only have ${MAX_LINES_PER_SHEET} calculations per sheet.`,
+            [{ text: "OK" }]
+          );
+          return previousNotes;
+        }
+
         const updatedNotes = previousNotes.map((note) =>
           note.id === noteId
             ? {
@@ -339,8 +354,8 @@ export const useNotes = (marketData: MarketDataState): NotesHook => {
     addLine,
     addNote,
     deleteNote,
-    deleteLine, // Added
-    setPremium, // Added
-    downgradeToFree, // Added
+    deleteLine,
+    setPremium,
+    downgradeToFree,
   };
 };
