@@ -73,7 +73,6 @@ export const createStyles = (theme: Theme) =>
       display: "flex",
       flexDirection: "row",
       width: "48%",
-      marginTop: theme.spacing.sm,
       marginHorizontal: "auto",
       paddingVertical: theme.spacing.lg,
       borderRadius: theme.radii.xl,
@@ -87,5 +86,22 @@ export const createStyles = (theme: Theme) =>
       color: theme.colors.primary,
       fontWeight: "600",
       marginLeft: theme.spacing.sm,
+    },
+    // Swipe-to-delete backdrop
+    deleteBackdrop: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      top: 0,
+      bottom: 0,
+      backgroundColor: theme.colors.error,
+      borderRadius: theme.radii.lg,
+      justifyContent: "center",
+      alignItems: "flex-end",
+      paddingRight: theme.spacing.xl + theme.spacing.sm,
+    },
+    deleteText: {
+      color: "#FFFFFF",
+      fontWeight: "700",
     },
   });

@@ -12,7 +12,4 @@ export const createStyles = (theme: Theme) =>
     header: {
       marginBottom: theme.spacing.sm,
     },
-    footer: {
-      marginTop: theme.spacing.md,
-    },
   });

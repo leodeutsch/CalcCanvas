@@ -50,7 +50,6 @@ export const NoteTabs: React.FC<NoteTabsProps> = ({
         );
       })}
       <TouchableOpacity style={styles.addTab} onPress={onAdd}>
-        {/* <Text style={styles.addTabText}>+</Text> */}
         <HugeiconsIcon
           icon={PlusSignIcon}
           color={theme.colors.primary}

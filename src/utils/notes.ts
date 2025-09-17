@@ -1,6 +1,7 @@
 import type { CalculationLine, CalculationResult, Note } from "../types";
 
-const generateId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const generateId = () =>
+  `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 export const createLine = (
   input = "",
@@ -13,7 +14,7 @@ export const createLine = (
 
 export const createInitialNote = (): Note => ({
   id: generateId(),
-  title: "Calculator",
+  title: "Sheet",
   lines: [
     createLine("3 apples * $2.50 each", {
       value: 7.5,
@@ -26,9 +27,9 @@ export const createInitialNote = (): Note => ({
   lastModified: new Date().toISOString(),
 });
 
-export const createBlankNote = (index: number): Note => ({
+export const createBlankNote = (sheetNumber: number): Note => ({
   id: generateId(),
-  title: `Sheet ${index}`,
+  title: sheetNumber === 1 ? "Sheet" : `Sheet ${sheetNumber}`,
   lines: [createLine()],
   lastModified: new Date().toISOString(),
 });

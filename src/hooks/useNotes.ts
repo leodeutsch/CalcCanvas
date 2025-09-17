@@ -1,13 +1,13 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Alert } from "react-native";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Alert } from "react-native";
 
 import { FREE_NOTE_LIMIT, STORAGE_KEYS } from "../constants";
+import { EXCHANGE_CACHE_TTL } from "../services/marketData";
 import type { CalculationLine, CalculationResult, Note } from "../types";
 import { evaluateInput } from "../utils/evaluator";
 import { createBlankNote, createInitialNote, createLine } from "../utils/notes";
 import type { MarketDataState } from "./useMarketData";
-import { EXCHANGE_CACHE_TTL } from "../services/marketData";
 
 interface NotesHook {
   notes: Note[];
@@ -19,11 +19,12 @@ interface NotesHook {
   addLine: (noteId: string) => void;
   addNote: () => void;
   deleteNote: (noteId: string) => void;
+  deleteLine: (noteId: string, lineId: string) => void; // Added
+  setPremium: (value: boolean) => Promise<void>; // Added
+  downgradeToFree: () => Promise<void>; // Added
 }
 
-const normalizeLegacyResult = (
-  line: CalculationLine
-): CalculationLine => {
+const normalizeLegacyResult = (line: CalculationLine): CalculationLine => {
   const rawResult = (line as unknown as { result?: unknown }).result;
 
   if (!rawResult) {
@@ -60,7 +61,10 @@ export const useNotes = (marketData: MarketDataState): NotesHook => {
 
   const persistNotes = useCallback(async (updatedNotes: Note[]) => {
     try {
-      await AsyncStorage.setItem(STORAGE_KEYS.notes, JSON.stringify(updatedNotes));
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.notes,
+        JSON.stringify(updatedNotes)
+      );
     } catch (error) {
       console.error("Error saving notes:", error);
     }
@@ -72,11 +76,13 @@ export const useNotes = (marketData: MarketDataState): NotesHook => {
       const storedPremium = await AsyncStorage.getItem(STORAGE_KEYS.premium);
 
       if (storedNotes) {
-        const parsedNotes: Note[] = JSON.parse(storedNotes).map((note: Note) => ({
-          ...note,
-          lines: note.lines.map((line) => normalizeLegacyResult(line)),
-          lastModified: note.lastModified ?? new Date().toISOString(),
-        }));
+        const parsedNotes: Note[] = JSON.parse(storedNotes).map(
+          (note: Note) => ({
+            ...note,
+            lines: note.lines.map((line) => normalizeLegacyResult(line)),
+            lastModified: note.lastModified ?? new Date().toISOString(),
+          })
+        );
 
         if (parsedNotes.length === 0) {
           const fallbackNote = createInitialNote();
@@ -226,7 +232,16 @@ export const useNotes = (marketData: MarketDataState): NotesHook => {
   const deleteNote = useCallback(
     (noteId: string) => {
       setNotes((previousNotes) => {
-        const filteredNotes = previousNotes.filter((note) => note.id !== noteId);
+        const targetIndex = previousNotes.findIndex((n) => n.id === noteId);
+
+        // Protect first sheet
+        if (targetIndex === 0) {
+          return previousNotes;
+        }
+
+        const filteredNotes = previousNotes.filter(
+          (note) => note.id !== noteId
+        );
 
         if (filteredNotes.length === 0) {
           const initialNote = createBlankNote(1);
@@ -246,6 +261,69 @@ export const useNotes = (marketData: MarketDataState): NotesHook => {
     [activeNoteId, persistNotes]
   );
 
+  const setPremium = useCallback(async (value: boolean) => {
+    try {
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.premium,
+        value ? "true" : "false"
+      );
+    } catch (e) {
+      console.warn("Failed to persist premium flag", e);
+    }
+    setIsPremium(value);
+  }, []);
+
+  const downgradeToFree = useCallback(async () => {
+    await setPremium(false);
+    setNotes((previousNotes) => {
+      // Keep only the first sheet; keep only its first card
+      const first = previousNotes[0] ?? createBlankNote(1);
+      const ensuredLines =
+        first.lines && first.lines.length > 0
+          ? [first.lines[0]]
+          : [createLine()];
+      const firstNote: Note = {
+        ...first,
+        title: "Sheet",
+        lines: ensuredLines,
+        lastModified: new Date().toISOString(),
+      };
+
+      const nextNotes = [firstNote];
+      setActiveNoteId(firstNote.id);
+      persistNotes(nextNotes);
+      return nextNotes;
+    });
+  }, [persistNotes, setPremium]);
+
+  const deleteLine = useCallback(
+    (noteId: string, lineId: string) => {
+      setNotes((previousNotes) => {
+        const updatedNotes = previousNotes.map((note) => {
+          if (note.id !== noteId) return note;
+
+          // Do not allow deleting the only line
+          if (note.lines.length <= 1) {
+            return note;
+          }
+
+          const nextLines = note.lines.filter((line) => line.id !== lineId);
+          // Safety: still ensure at least one line remains
+          const safeLines = nextLines.length > 0 ? nextLines : [createLine()];
+
+          return {
+            ...note,
+            lines: safeLines,
+            lastModified: new Date().toISOString(),
+          };
+        });
+        persistNotes(updatedNotes);
+        return updatedNotes;
+      });
+    },
+    [persistNotes]
+  );
+
   const activeNote = useMemo(
     () => notes.find((note) => note.id === activeNoteId),
     [activeNoteId, notes]
@@ -261,5 +339,8 @@ export const useNotes = (marketData: MarketDataState): NotesHook => {
     addLine,
     addNote,
     deleteNote,
+    deleteLine, // Added
+    setPremium, // Added
+    downgradeToFree, // Added
   };
 };
