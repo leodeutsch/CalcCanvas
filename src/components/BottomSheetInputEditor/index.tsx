@@ -20,7 +20,6 @@ import {
   View,
 } from "react-native";
 import Animated, {
-  KeyboardState,
   useAnimatedKeyboard,
   useAnimatedStyle,
   useSharedValue,
@@ -86,7 +85,6 @@ export const BottomSheetInputEditor: React.FC<BottomSheetInputEditorProps> = ({
       btnAnim.value = withTiming(1, { duration: 160 });
     }, 60);
 
-    // perder foco quando teclado fecha
     const hide = Keyboard.addListener(
       Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
       () => inputRef.current?.blur()
@@ -125,13 +123,10 @@ export const BottomSheetInputEditor: React.FC<BottomSheetInputEditorProps> = ({
 
   const kbd = useAnimatedKeyboard();
   const footerLiftStyle = useAnimatedStyle(() => {
-    const isOpen =
-      kbd.state.value === KeyboardState.OPEN ||
-      kbd.state.value === KeyboardState.OPENING;
     const h = kbd.height.value;
-    const effective = isOpen && h > 50 ? h - 72 : 0;
-    const lift =
-      Platform.OS === "ios" ? effective : Math.max(0, effective - 32);
+
+    const lift = Platform.OS === "ios" ? h : Math.max(0, h - 0);
+
     return {
       transform: [{ translateY: withTiming(-lift, { duration: 120 }) }],
     };
@@ -139,7 +134,7 @@ export const BottomSheetInputEditor: React.FC<BottomSheetInputEditorProps> = ({
 
   const renderFooter = useCallback(
     (footerProps: any) => (
-      <BottomSheetFooter {...footerProps} bottomInset={insets.bottom}>
+      <BottomSheetFooter {...footerProps} bottomInset={0}>
         <Animated.View
           style={[
             {
@@ -150,6 +145,7 @@ export const BottomSheetInputEditor: React.FC<BottomSheetInputEditorProps> = ({
             footerLiftStyle,
             doneAnimStyle,
           ]}
+          pointerEvents="box-none"
         >
           <TouchableOpacity
             activeOpacity={0.9}
@@ -190,7 +186,7 @@ export const BottomSheetInputEditor: React.FC<BottomSheetInputEditorProps> = ({
         borderTopRightRadius: theme.radii.lg,
       }}
       handleIndicatorStyle={{ backgroundColor: theme.colors.border }}
-      keyboardBehavior={Platform.OS === "ios" ? "extend" : "interactive"}
+      keyboardBehavior="extend"
       keyboardBlurBehavior="restore"
       android_keyboardInputMode="adjustResize"
       footerComponent={renderFooter}

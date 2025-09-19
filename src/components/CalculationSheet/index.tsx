@@ -4,6 +4,7 @@ import {
   Keyboard,
   LayoutChangeEvent,
   PanResponder,
+  Pressable,
   ScrollView,
   Text,
   TouchableOpacity,
@@ -14,10 +15,9 @@ import { PlusSignIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import type { Theme } from "../../styles/theme";
 import type { CalculationLine, Note } from "../../types";
-import { BottomSheetInputEditor } from "../BottomSheetInputEditor"; // NEW
+import { BottomSheetInputEditor } from "../BottomSheetInputEditor";
 import { createStyles } from "./styles";
 
-// keep your existing limit
 const MAX_LINES_PER_SHEET = 3;
 
 interface CalculationSheetProps {
@@ -40,16 +40,13 @@ export const CalculationSheet: React.FC<CalculationSheetProps> = ({
   const styles = useMemo(() => createStyles(theme), [theme]);
   const placeholderColor = String(theme.colors.secondaryText);
 
-  // editor state
   const [editingLine, setEditingLine] = useState<CalculationLine | null>(null);
   const [isNewEditing, setIsNewEditing] = useState(false);
   const [pendingOpenNew, setPendingOpenNew] = useState(false);
   const prevLinesCount = useRef<number>(note.lines.length);
 
-  // Check if we can add more lines
   const canAddLine = note.lines.length < MAX_LINES_PER_SHEET;
 
-  /** Swipe-to-delete for cards (unchanged) */
   const SwipeableRow: React.FC<{
     onDelete: () => void;
     children: React.ReactNode;
@@ -65,7 +62,7 @@ export const CalculationSheet: React.FC<CalculationSheetProps> = ({
       () =>
         PanResponder.create({
           onMoveShouldSetPanResponder: (_evt, gesture) => {
-            if (editingLine) return false; // do not swipe while editing
+            if (editingLine) return false;
             const dx = Math.abs(gesture.dx);
             const dy = Math.abs(gesture.dy);
             return dx > 6 && dx > dy;
@@ -119,7 +116,6 @@ export const CalculationSheet: React.FC<CalculationSheetProps> = ({
     );
   };
 
-  /** Open editor for existing line */
   const handleInputFocus = (line: CalculationLine) => {
     if (editingLine) return;
     setIsNewEditing(false);
@@ -127,14 +123,12 @@ export const CalculationSheet: React.FC<CalculationSheetProps> = ({
     Keyboard.dismiss();
   };
 
-  /** Add new line and open editor with keyboard shown */
   const handleAddAndOpen = () => {
     if (!canAddLine) return;
     setPendingOpenNew(true);
-    onAddLine(); // parent creates the line; we detect it and open
+    onAddLine();
   };
 
-  /** Detect new line appended → open editor on the last line */
   useEffect(() => {
     if (pendingOpenNew && note.lines.length > prevLinesCount.current) {
       const last = note.lines[note.lines.length - 1];
@@ -145,9 +139,7 @@ export const CalculationSheet: React.FC<CalculationSheetProps> = ({
     prevLinesCount.current = note.lines.length;
   }, [note.lines, pendingOpenNew]);
 
-  /** Save from editor */
   const handleEditorSave = (lineId: string, value: string) => {
-    // if it's a new card and user left it empty → delete it
     if (isNewEditing && !value.trim()) {
       onDeleteLine(lineId);
       setEditingLine(null);
@@ -157,9 +149,7 @@ export const CalculationSheet: React.FC<CalculationSheetProps> = ({
     setEditingLine(null);
   };
 
-  /** Cancel from editor */
   const handleEditorCancel = (lineId: string, valueSnapshot: string) => {
-    // same rule: if new & empty → delete
     if (isNewEditing && !valueSnapshot.trim()) {
       onDeleteLine(lineId);
     }
@@ -186,11 +176,13 @@ export const CalculationSheet: React.FC<CalculationSheetProps> = ({
           const allowSwipe = note.lines.length > 1;
 
           const Card = (
-            <TouchableOpacity
-              style={styles.card}
+            <Pressable
               onPress={() => handleInputFocus(line)}
-              activeOpacity={0.8}
               disabled={!!editingLine}
+              style={({ pressed }) => [
+                styles.card,
+                pressed && { transform: [{ scale: 0.99 }] },
+              ]}
             >
               <Text style={styles.input}>
                 {line.input || "Type calculation..."}
@@ -229,7 +221,7 @@ export const CalculationSheet: React.FC<CalculationSheetProps> = ({
               {line.error ? (
                 <Text style={styles.errorText}>{line.error}</Text>
               ) : null}
-            </TouchableOpacity>
+            </Pressable>
           );
 
           return allowSwipe ? (
