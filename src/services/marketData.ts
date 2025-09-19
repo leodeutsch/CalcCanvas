@@ -1,5 +1,4 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-
 import { ENV } from "../config/env";
 
 export interface ExchangeRateData {
@@ -21,6 +20,11 @@ const COIN_CACHE_KEY = "coin_prices";
 export const EXCHANGE_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 export const COIN_CACHE_TTL = 15 * 60 * 1000; // 15 minutes
 
+// Persisted base currency key
+const BASE_CCY_KEY = "base_currency";
+
+// Expanded default rates with more currencies.
+// NOTE: These are just safe fallbacks used when providers fail or offline.
 const DEFAULT_EXCHANGE_RATES: ExchangeRateData = {
   base: DEFAULT_BASE_CURRENCY,
   baseToTarget: {
@@ -31,18 +35,27 @@ const DEFAULT_EXCHANGE_RATES: ExchangeRateData = {
     CAD: 1.36,
     AUD: 1.51,
     JPY: 157.0,
+    // New ones:
+    SEK: 10.5,
+    NOK: 10.7,
+    DKK: 6.85,
+    MXN: 18.0,
+    ARS: 950.0,
+    CLP: 910.0,
+    INR: 83.0,
+    CNY: 7.25,
+    CHF: 0.86,
   },
-  targetToBase: {
-    USD: 1,
-    EUR: 1 / 0.92,
-    BRL: 1 / 5.1,
-    GBP: 1 / 0.78,
-    CAD: 1 / 1.36,
-    AUD: 1 / 1.51,
-    JPY: 1 / 157.0,
-  },
+  targetToBase: {} as Record<string, number>,
   fetchedAt: Date.now(),
 };
+// Build targetToBase from baseToTarget
+DEFAULT_EXCHANGE_RATES.targetToBase = Object.fromEntries(
+  Object.entries(DEFAULT_EXCHANGE_RATES.baseToTarget).map(([k, v]) => [
+    k,
+    1 / v,
+  ])
+);
 
 const DEFAULT_COIN_PRICES: CoinPriceData = {
   vsCurrency: DEFAULT_BASE_CURRENCY,
@@ -65,10 +78,7 @@ const buildExchangeRateData = (
 
   Object.entries(conversionRates).forEach(([code, rate]) => {
     const upper = code.toUpperCase();
-    if (!Number.isFinite(rate) || rate <= 0) {
-      return;
-    }
-
+    if (!Number.isFinite(rate) || rate <= 0) return;
     baseToTarget[upper] = rate;
     targetToBase[upper] = 1 / rate;
   });
@@ -82,12 +92,10 @@ const buildExchangeRateData = (
 };
 
 type Rates = Record<string, number>;
-
 type FetchOptions = {
   base?: string; // default 'USD'
   symbols?: string[]; // limit currencies
 };
-
 const pickSymbols = (rates: Rates, symbols?: string[]) => {
   if (!symbols || symbols.length === 0) return rates;
   const set = new Set(symbols.map((s) => s.toUpperCase()));
@@ -97,15 +105,13 @@ const pickSymbols = (rates: Rates, symbols?: string[]) => {
   }
   return out;
 };
-
 // Rebase rates from USD to target base (for OXR free plan)
 const rebaseFromUSD = (usdRates: Rates, base: string): Rates => {
   const baseRate = usdRates[base];
   if (!baseRate) throw new Error(`Base ${base} not found in USD rates`);
   const rebased: Rates = {};
   for (const [code, rateVsUSD] of Object.entries(usdRates)) {
-    // rate(base->code) = rate(USD->code) / rate(USD->base)
-    rebased[code] = rateVsUSD / baseRate;
+    rebased[code] = rateVsUSD / baseRate; // base->code
   }
   rebased[base] = 1;
   return rebased;
@@ -117,8 +123,7 @@ async function fetchFromOpenExchange({
   base = "USD",
   symbols,
 }: FetchOptions): Promise<{ base: string; rates: Rates; timestamp: number }> {
-  if (!openExchangeApiKey)
-    throw new Error("OPENEXCHANGE_API_KEY missing");
+  if (!openExchangeApiKey) throw new Error("OPENEXCHANGE_API_KEY missing");
   const params = new URLSearchParams({ app_id: openExchangeApiKey });
   if (symbols && symbols.length)
     params.set("symbols", symbols.join(",").toUpperCase());
@@ -147,7 +152,6 @@ async function fetchFromExchangeRateAPI({
 }: FetchOptions): Promise<{ base: string; rates: Rates; timestamp: number }> {
   if (!exchangeRateApiKey) throw new Error("EXCHANGERATE_API_KEY missing");
 
-  // Note: Free plan endpoints typically require base in the path or only support USD; adjust if your plan supports /latest/{BASE}
   const res = await fetch(
     `https://v6.exchangerate-api.com/v6/${exchangeRateApiKey}/latest/${encodeURIComponent(
       base.toUpperCase()
@@ -173,22 +177,18 @@ async function fetchFromExchangeRateAPI({
 
 // Public API: fetch latest FX rates with provider fallback
 export async function fetchLatestRates(opts: FetchOptions = {}) {
-  // Try OXR first if key exists; fall back to ExchangeRate-API
   const hasOXR = !!openExchangeApiKey;
   const hasER = !!exchangeRateApiKey;
-
   if (!hasOXR && !hasER) {
     throw new Error(
       "No FX provider keys configured. Set OPENEXCHANGE_API_KEY or EXCHANGERATE_API_KEY."
     );
   }
-
   try {
     if (hasOXR) return await fetchFromOpenExchange(opts);
   } catch (e) {
     console.warn("OpenExchange failed, falling back:", e);
   }
-
   return await fetchFromExchangeRateAPI(opts);
 }
 
@@ -211,9 +211,10 @@ export const fetchExchangeRates = async (
   }
 
   try {
+    const symbols = Object.keys(DEFAULT_EXCHANGE_RATES.baseToTarget);
     const { base, rates, timestamp } = await fetchLatestRates({
       base: upperBase,
-      symbols: Object.keys(DEFAULT_EXCHANGE_RATES.baseToTarget),
+      symbols,
     });
 
     const result = buildExchangeRateData(base, rates);
@@ -238,7 +239,6 @@ const COIN_SYMBOL_TO_ID: Record<string, string> = {
   SOL: "solana",
   DOGE: "dogecoin",
 };
-
 export const COIN_IDS = Array.from(new Set(Object.values(COIN_SYMBOL_TO_ID)));
 
 export const fetchCoinPrices = async (
@@ -263,38 +263,29 @@ export const fetchCoinPrices = async (
 
   const ids = COIN_IDS.join(",");
   const apiKey = coinGeckoApiKey?.trim();
-
   const url = new URL(
     `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=${upperCurrency.toLowerCase()}`
   );
-
-  if (apiKey) {
-    url.searchParams.set("x_cg_pro_api_key", apiKey);
-  }
+  if (apiKey) url.searchParams.set("x_cg_pro_api_key", apiKey);
 
   try {
     const response = await fetch(url.toString());
-    if (!response.ok) {
+    if (!response.ok)
       throw new Error(`Failed to fetch coin prices: ${response.status}`);
-    }
 
     const data = await response.json();
     const prices: Record<string, number> = {};
-
     Object.entries(data ?? {}).forEach(([key, value]) => {
       if (value && typeof value === "object") {
         const amount = (value as Record<string, number>)[
           upperCurrency.toLowerCase()
         ];
-        if (Number.isFinite(amount)) {
-          prices[key] = amount as number;
-        }
+        if (Number.isFinite(amount)) prices[key] = amount as number;
       }
     });
 
-    if (Object.keys(prices).length === 0) {
+    if (Object.keys(prices).length === 0)
       throw new Error("Unexpected coin price response");
-    }
 
     const result: CoinPriceData = {
       vsCurrency: upperCurrency,
@@ -322,3 +313,18 @@ export const getSupportedCurrencyCodes = () =>
   Object.keys(DEFAULT_EXCHANGE_RATES.baseToTarget);
 
 export const DEFAULT_BASE = DEFAULT_BASE_CURRENCY;
+
+// Helpers for base currency persistence
+export async function loadPersistedBase(): Promise<string> {
+  try {
+    const v = await AsyncStorage.getItem(BASE_CCY_KEY);
+    return v?.toUpperCase() || DEFAULT_BASE_CURRENCY;
+  } catch {
+    return DEFAULT_BASE_CURRENCY;
+  }
+}
+export async function persistBaseCurrency(code: string): Promise<void> {
+  try {
+    await AsyncStorage.setItem(BASE_CCY_KEY, code.toUpperCase());
+  } catch {}
+}

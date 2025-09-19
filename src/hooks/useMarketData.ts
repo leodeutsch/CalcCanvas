@@ -5,30 +5,46 @@ import {
   fetchCoinPrices,
   fetchExchangeRates,
   getCoinIdFromSymbol,
+  loadPersistedBase,
+  persistBaseCurrency,
 } from "../services/marketData";
 
 export interface MarketDataState {
   baseCurrency: string;
-  exchangeRates: Record<string, number>;
-  ratesToBase: Record<string, number>;
+  exchangeRates: Record<string, number>; // base -> target
+  ratesToBase: Record<string, number>; // target -> base
   coinPrices: Record<string, number>;
   isLoading: boolean;
   lastUpdated?: number;
+
   refresh: () => Promise<void>;
-  getCurrencyRate: (code: string) => number | undefined;
+  setBaseCurrency: (code: string) => Promise<void>;
+
+  getCurrencyRate: (code: string) => number | undefined; // code -> rate to base
   convertFromBase: (value: number, targetCode: string) => number | undefined;
   convertToBase: (value: number, sourceCode: string) => number | undefined;
+
   getCoinPriceBySymbol: (symbol: string) => number | undefined;
   getCoinAmountFromBase: (value: number, symbol: string) => number | undefined;
 }
 
 export const useMarketData = (): MarketDataState => {
-  const [baseCurrency, setBaseCurrency] = useState(DEFAULT_BASE);
-  const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({});
+  const [baseCurrency, setBaseCurrencyState] = useState(DEFAULT_BASE);
+  const [exchangeRates, setExchangeRates] = useState<Record<string, number>>(
+    {}
+  );
   const [ratesToBase, setRatesToBase] = useState<Record<string, number>>({});
   const [coinPrices, setCoinPrices] = useState<Record<string, number>>({});
   const [lastUpdated, setLastUpdated] = useState<number | undefined>();
   const [isLoading, setIsLoading] = useState(true);
+
+  // Load persisted base at startup
+  useEffect(() => {
+    (async () => {
+      const persisted = await loadPersistedBase();
+      setBaseCurrencyState(persisted);
+    })();
+  }, []);
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
@@ -38,7 +54,7 @@ export const useMarketData = (): MarketDataState => {
         fetchCoinPrices(baseCurrency),
       ]);
 
-      setBaseCurrency(exchangeData.base);
+      setBaseCurrencyState(exchangeData.base);
       setExchangeRates(exchangeData.baseToTarget);
       setRatesToBase(exchangeData.targetToBase);
       setCoinPrices(coinData.prices);
@@ -50,6 +66,19 @@ export const useMarketData = (): MarketDataState => {
     }
   }, [baseCurrency]);
 
+  // Expose a setter that persists and refreshes
+  const setBaseCurrency = useCallback(
+    async (code: string) => {
+      const upper = code.toUpperCase();
+      if (upper === baseCurrency.toUpperCase()) return;
+      await persistBaseCurrency(upper);
+      setBaseCurrencyState(upper);
+      // refresh will run due to baseCurrency change effect below
+    },
+    [baseCurrency]
+  );
+
+  // Refresh when base currency changes (and on mount after load)
   useEffect(() => {
     refresh();
   }, [refresh]);
@@ -57,9 +86,7 @@ export const useMarketData = (): MarketDataState => {
   const getCurrencyRate = useCallback(
     (code: string): number | undefined => {
       const upper = code.toUpperCase();
-      if (upper === baseCurrency.toUpperCase()) {
-        return 1;
-      }
+      if (upper === baseCurrency.toUpperCase()) return 1;
       return ratesToBase[upper];
     },
     [baseCurrency, ratesToBase]
@@ -68,9 +95,7 @@ export const useMarketData = (): MarketDataState => {
   const convertFromBase = useCallback(
     (value: number, targetCode: string): number | undefined => {
       const rate = exchangeRates[targetCode.toUpperCase()];
-      if (rate == null) {
-        return undefined;
-      }
+      if (rate == null) return undefined;
       return value * rate;
     },
     [exchangeRates]
@@ -79,9 +104,7 @@ export const useMarketData = (): MarketDataState => {
   const convertToBase = useCallback(
     (value: number, sourceCode: string): number | undefined => {
       const rate = getCurrencyRate(sourceCode);
-      if (rate == null) {
-        return undefined;
-      }
+      if (rate == null) return undefined;
       return value * rate;
     },
     [getCurrencyRate]
@@ -90,9 +113,7 @@ export const useMarketData = (): MarketDataState => {
   const getCoinPriceBySymbol = useCallback(
     (symbol: string): number | undefined => {
       const id = getCoinIdFromSymbol(symbol);
-      if (!id) {
-        return undefined;
-      }
+      if (!id) return undefined;
       return coinPrices[id];
     },
     [coinPrices]
@@ -101,9 +122,7 @@ export const useMarketData = (): MarketDataState => {
   const getCoinAmountFromBase = useCallback(
     (value: number, symbol: string): number | undefined => {
       const price = getCoinPriceBySymbol(symbol);
-      if (!price || price === 0) {
-        return undefined;
-      }
+      if (!price || price === 0) return undefined;
       return value / price;
     },
     [getCoinPriceBySymbol]
@@ -117,7 +136,10 @@ export const useMarketData = (): MarketDataState => {
       coinPrices,
       isLoading,
       lastUpdated,
+
       refresh,
+      setBaseCurrency,
+
       getCurrencyRate,
       convertFromBase,
       convertToBase,
@@ -132,6 +154,7 @@ export const useMarketData = (): MarketDataState => {
       isLoading,
       lastUpdated,
       refresh,
+      setBaseCurrency,
       getCurrencyRate,
       convertFromBase,
       convertToBase,

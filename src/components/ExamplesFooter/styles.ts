@@ -6,6 +6,7 @@ export const createStyles = (theme: Theme) =>
   StyleSheet.create({
     wrapper: {
       position: "relative",
+      zIndex: 1,
     },
     animatedContainer: {
       overflow: "hidden",

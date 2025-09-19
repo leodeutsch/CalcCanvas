@@ -19,7 +19,9 @@ export const createStyles = (theme: Theme) =>
     },
     card: {
       paddingHorizontal: theme.spacing.xl + theme.spacing.sm,
-      paddingVertical: theme.spacing.md + theme.spacing.xs,
+      paddingVertical: theme.spacing.lg + theme.spacing.sm,
+      maxHeight: 360,
+      overflow: "hidden",
       borderRadius: theme.radii.lg,
       backgroundColor: theme.colors.cardBackground,
     },
@@ -30,7 +32,7 @@ export const createStyles = (theme: Theme) =>
       fontFamily: Platform.OS === "ios" ? "SF Pro Text" : "Roboto",
     },
     resultContainer: {
-      marginBottom: theme.spacing.md,
+      marginBottom: theme.spacing.sm,
       flexDirection: "row",
       alignItems: "flex-end",
     },
@@ -48,19 +50,21 @@ export const createStyles = (theme: Theme) =>
     conversionChips: {
       flexDirection: "row",
       flexWrap: "wrap",
-      marginTop: theme.spacing.xs,
+      marginTop: 0,
+      maxHeight: 80,
+      overflow: "hidden",
     },
     conversionChip: {
-      paddingVertical: theme.spacing.xs + 2,
-      paddingHorizontal: theme.spacing.md + theme.spacing.xs,
-      borderRadius: theme.radii.md,
+      paddingVertical: theme.spacing.xs,
+      paddingHorizontal: theme.spacing.sm,
+      borderRadius: theme.radii.sm,
       backgroundColor: theme.colors.chipBackground,
-      marginRight: theme.spacing.sm,
-      marginBottom: theme.spacing.sm,
+      marginRight: theme.spacing.xs,
+      marginBottom: theme.spacing.xs,
     },
     conversionText: {
-      fontSize: 14,
-      fontWeight: "600",
+      fontSize: 12,
+      fontWeight: "500",
       color: theme.colors.secondaryText,
     },
     errorText: {
@@ -87,7 +91,7 @@ export const createStyles = (theme: Theme) =>
       fontWeight: "600",
       marginLeft: theme.spacing.sm,
     },
-    // Swipe-to-delete backdrop
+  
     deleteBackdrop: {
       position: "absolute",
       left: 0,

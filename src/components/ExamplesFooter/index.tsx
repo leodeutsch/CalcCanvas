@@ -1,3 +1,5 @@
+import { ViewIcon, ViewOffIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
   useCallback,
@@ -14,16 +16,13 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-
-import { ViewIcon, ViewOffIcon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react-native";
-
 import type { Theme } from "../../styles/theme";
 import { createStyles } from "./styles";
 
 interface ExamplesFooterProps {
   theme: Theme;
   examples: string[];
+  hidden?: boolean; // external visibility (e.g., editor open)
 }
 
 const STORAGE_KEY = "examples_footer_collapsed";
@@ -31,6 +30,7 @@ const STORAGE_KEY = "examples_footer_collapsed";
 export const ExamplesFooter: React.FC<ExamplesFooterProps> = ({
   theme,
   examples,
+  hidden = false,
 }) => {
   const styles = useMemo(() => createStyles(theme), [theme]);
 
@@ -39,6 +39,7 @@ export const ExamplesFooter: React.FC<ExamplesFooterProps> = ({
   const [isCollapsed, setIsCollapsed] = useState(false);
   const animation = useRef(new Animated.Value(1)).current;
 
+  // initial load of collapsed state
   useEffect(() => {
     const loadState = async () => {
       try {
@@ -52,9 +53,21 @@ export const ExamplesFooter: React.FC<ExamplesFooterProps> = ({
         setIsReady(true);
       }
     };
-
     loadState();
-  }, [animation]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // drive animation by hidden + isCollapsed without changing persisted state
+  useEffect(() => {
+    if (!isReady) return;
+    const target = hidden ? 0 : isCollapsed ? 0 : 1;
+    Animated.timing(animation, {
+      toValue: target,
+      duration: 220,
+      easing: Easing.inOut(Easing.quad),
+      useNativeDriver: false,
+    }).start();
+  }, [hidden, isCollapsed, isReady, animation]);
 
   const animateTo = useCallback(
     (toValue: number, onComplete?: () => void) => {
@@ -64,50 +77,42 @@ export const ExamplesFooter: React.FC<ExamplesFooterProps> = ({
         easing: Easing.inOut(Easing.quad),
         useNativeDriver: false,
       }).start(({ finished }) => {
-        if (finished) {
-          onComplete?.();
-        }
+        if (finished) onComplete?.();
       });
     },
     [animation]
   );
 
   const handleCollapse = useCallback(() => {
-    animateTo(0, () => {
-      setIsCollapsed(true);
-      AsyncStorage.setItem(STORAGE_KEY, "true").catch((error) =>
-        console.warn("Failed to persist footer state", error)
-      );
-    });
-  }, [animateTo]);
+    // keep state collapsed regardless of hidden; animation will be handled by effect
+    setIsCollapsed(true);
+    AsyncStorage.setItem(STORAGE_KEY, "true").catch((e) =>
+      console.warn("Failed to persist footer state", e)
+    );
+    // if not hidden, animate immediately for snappy feedback
+    if (!hidden) animateTo(0);
+  }, [animateTo, hidden]);
 
   const handleExpand = useCallback(() => {
     setIsCollapsed(false);
-    AsyncStorage.setItem(STORAGE_KEY, "false").catch((error) =>
-      console.warn("Failed to persist footer state", error)
+    AsyncStorage.setItem(STORAGE_KEY, "false").catch((e) =>
+      console.warn("Failed to persist footer state", e)
     );
-    requestAnimationFrame(() => {
-      animateTo(1);
-    });
-  }, [animateTo]);
+    if (!hidden) animateTo(1);
+  }, [animateTo, hidden]);
 
   const handleContentLayout = useCallback(
     (event: LayoutChangeEvent) => {
       const { height } = event.nativeEvent.layout;
-      if (height > contentHeight) {
-        setContentHeight(height);
-      }
+      if (height > contentHeight) setContentHeight(height);
     },
     [contentHeight]
   );
 
   const animatedStyle = useMemo(() => {
     if (!contentHeight) {
-      return {
-        opacity: animation,
-      };
+      return { opacity: animation };
     }
-
     return {
       opacity: animation,
       height: animation.interpolate({
@@ -126,15 +131,14 @@ export const ExamplesFooter: React.FC<ExamplesFooterProps> = ({
     };
   }, [animation, contentHeight]);
 
-  if (!isReady) {
-    return null;
-  }
+  if (!isReady) return null;
 
   return (
     <View style={styles.wrapper}>
       <Animated.View
         style={[styles.animatedContainer, animatedStyle]}
-        pointerEvents={isCollapsed ? "none" : "auto"}
+        // disable touch both when hidden and when collapsed
+        pointerEvents={hidden || isCollapsed ? "none" : "auto"}
       >
         <View onLayout={handleContentLayout} style={styles.card}>
           <View style={styles.header}>
@@ -159,7 +163,8 @@ export const ExamplesFooter: React.FC<ExamplesFooterProps> = ({
         </View>
       </Animated.View>
 
-      {isCollapsed ? (
+      {/* show FAB only when collapsed AND not hidden */}
+      {isCollapsed && !hidden ? (
         <TouchableOpacity style={styles.fab} onPress={handleExpand}>
           <HugeiconsIcon
             icon={ViewOffIcon}

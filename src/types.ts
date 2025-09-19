@@ -1,4 +1,17 @@
-export type CalculationResultType = "mass" | "currency" | "number" | "date";
+export type CalculationResultType =
+  | "mass"
+  | "currency"
+  | "number"
+  | "date"
+  | "css"
+  | "temperature"
+  | "data"
+  | "length"
+  | "speed"
+  | "area"
+  | "volume"
+  | "angle"
+  | "duration";
 
 export interface ResultConversion {
   unit: string;

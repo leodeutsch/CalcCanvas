@@ -1,10 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Appearance, Platform, StatusBar } from "react-native";
-import {
-  SafeAreaProvider,
-  SafeAreaView,
-} from "react-native-safe-area-context";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
+import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { MainScreen } from "./src/screens/MainScreen";
 import { createTheme } from "./src/styles/theme";
 
@@ -34,19 +33,23 @@ export const App: React.FC = () => {
   }, [isDark]);
 
   return (
-    <SafeAreaProvider>
-      <SafeAreaView
-        style={{
-          flex: 1,
-          backgroundColor: theme.colors.background,
-        }}
-      >
-        <StatusBar
-          barStyle={isDark ? "light-content" : "dark-content"}
-          backgroundColor={statusBarBackgroundColor}
-        />
-        <MainScreen theme={theme} />
-      </SafeAreaView>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <SafeAreaView
+          style={{
+            flex: 1,
+            backgroundColor: theme.colors.background,
+          }}
+        >
+          <BottomSheetModalProvider>
+            <StatusBar
+              barStyle={isDark ? "light-content" : "dark-content"}
+              backgroundColor={statusBarBackgroundColor}
+            />
+            <MainScreen theme={theme} />
+          </BottomSheetModalProvider>
+        </SafeAreaView>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 };

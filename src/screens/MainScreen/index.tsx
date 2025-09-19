@@ -40,6 +40,8 @@ export const MainScreen: React.FC<MainScreenProps> = ({ theme }) => {
     downgradeToFree, // Added
   } = useNotes(marketData);
 
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+
   // Premium pill state
   const [pillVisible, setPillVisible] = useState(false);
   const [pillMessage, setPillMessage] = useState("");
@@ -186,12 +188,17 @@ export const MainScreen: React.FC<MainScreenProps> = ({ theme }) => {
           }
           onAddLine={handleAddLineRequested}
           onDeleteLine={handleDeleteLine}
+          onEditorOpenChange={setIsEditorOpen}
         />
       ) : (
         <EmptyState theme={theme} />
       )}
 
-      <ExamplesFooter theme={theme} examples={EXAMPLE_LINES} />
+      <ExamplesFooter
+        theme={theme}
+        examples={EXAMPLE_LINES}
+        hidden={isEditorOpen}
+      />
 
       <PremiumPill theme={theme} message={pillMessage} visible={pillVisible} />
 
