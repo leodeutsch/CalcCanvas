@@ -1,22 +1,23 @@
 import Constants from "expo-constants";
 
-type Extra = Record<string, string | undefined>;
+type Extra = Partial<{
+  EXPO_PUBLIC_OPENEXCHANGE_API_KEY: string;
+  EXPO_PUBLIC_EXCHANGERATE_API_KEY: string;
+  EXPO_PUBLIC_COINGECKO_API_KEY: string;
+}>;
 
-const extra: Extra = Constants.expoConfig?.extra ?? {};
+function getExtra(): Extra {
+  const fromExpo = (Constants?.expoConfig?.extra ?? {}) as Extra;
+  // fallback para casos antigos — não deve ser necessário, mas ajuda
+  // @ts-ignore
+  const fromManifest = (Constants?.manifest?.extra ?? {}) as Extra;
+  return { ...fromManifest, ...fromExpo };
+}
 
-const fromExtra = (key: string) => extra[key] ?? extra[key.toLowerCase()];
-
-const getEnv = (name: string, fallbackKey?: string) =>
-  process.env[name] ?? (fallbackKey ? fromExtra(fallbackKey) : undefined) ?? "";
+const extra = getExtra();
 
 export const ENV = {
-  openExchangeApiKey: getEnv(
-    "EXPO_PUBLIC_OPENEXCHANGE_API_KEY",
-    "OPENEXCHANGE_API_KEY"
-  ),
-  exchangeRateApiKey: getEnv(
-    "EXPO_PUBLIC_EXCHANGERATE_API_KEY",
-    "EXCHANGERATE_API_KEY"
-  ),
-  coinGeckoApiKey: getEnv("EXPO_PUBLIC_COINGECKO_API_KEY", "COINGECKO_API_KEY"),
+  openExchangeApiKey: extra.EXPO_PUBLIC_OPENEXCHANGE_API_KEY || "",
+  exchangeRateApiKey: extra.EXPO_PUBLIC_EXCHANGERATE_API_KEY || "",
+  coinGeckoApiKey: extra.EXPO_PUBLIC_COINGECKO_API_KEY || "",
 };

@@ -12,10 +12,15 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
-      }
+      },
+      "channel": "preview",
+      "developmentClient": false
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "distribution": "store",
+      "developmentClient": false,
+      "channel": "production"
     }
   },
   "submit": {
