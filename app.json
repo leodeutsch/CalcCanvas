@@ -13,17 +13,18 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "icon": "./assets/altIcons/icon.png",
+      "bundleIdentifier": "com.leodeutsch.calccanvas",
+      "supportsTablet": false
     },
     "android": {
       "package": "com.leodeutsch.calccanvas",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/altIcons/adaptive-foreground.png",
+        "backgroundColor": "#2563EB"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "usesCleartextTraffic": false,
       "softwareKeyboardLayoutMode": "resize"
     },
     "web": {
