@@ -1,18 +1,16 @@
+import { PlusSignIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react-native";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   Keyboard,
   LayoutChangeEvent,
   PanResponder,
-  Pressable,
   ScrollView,
   Text,
-  TouchableOpacity,
   View,
 } from "react-native";
-
-import { PlusSignIcon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react-native";
+import { Button, Card, Chip } from "react-native-paper"; // ⬅️ novo
 import type { Theme } from "../../styles/theme";
 import type { CalculationLine, Note } from "../../types";
 import { BottomSheetInputEditor } from "../BottomSheetInputEditor";
@@ -47,6 +45,33 @@ export const CalculationSheet: React.FC<CalculationSheetProps> = ({
 
   const canAddLine = note.lines.length < MAX_LINES_PER_SHEET;
 
+  const pressAnim = useRef(new Animated.Value(0)).current;
+  const handlePressIn = () =>
+    Animated.spring(pressAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 40,
+      bounciness: 0,
+    }).start();
+  const handlePressOut = () =>
+    Animated.spring(pressAnim, {
+      toValue: 0,
+      useNativeDriver: true,
+      speed: 40,
+      bounciness: 6,
+    }).start();
+
+  const scaleStyle = {
+    transform: [
+      {
+        scale: pressAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [1, 0.98],
+        }),
+      },
+    ],
+  };
+
   const SwipeableRow: React.FC<{
     onDelete: () => void;
     children: React.ReactNode;
@@ -68,11 +93,8 @@ export const CalculationSheet: React.FC<CalculationSheetProps> = ({
             return dx > 6 && dx > dy;
           },
           onPanResponderMove: (_evt, gesture) => {
-            if (gesture.dx < 0) {
-              translateX.setValue(gesture.dx);
-            } else {
-              translateX.setValue(gesture.dx * 0.2);
-            }
+            if (gesture.dx < 0) translateX.setValue(gesture.dx);
+            else translateX.setValue(gesture.dx * 0.2);
           },
           onPanResponderRelease: (_evt, gesture) => {
             const threshold = Math.max(80, width * 0.25);
@@ -175,84 +197,97 @@ export const CalculationSheet: React.FC<CalculationSheetProps> = ({
           const hasResult = Boolean(line.result);
           const allowSwipe = note.lines.length > 1;
 
-          const Card = (
-            <Pressable
-              onPress={() => handleInputFocus(line)}
-              disabled={!!editingLine}
-              style={({ pressed }) => [
-                styles.card,
-                pressed && { transform: [{ scale: 0.99 }] },
-              ]}
-            >
-              <Text style={styles.input}>
-                {line.input || "Type calculation..."}
-              </Text>
+          const PaperCard = (
+            <Animated.View style={scaleStyle}>
+              <Card
+                mode="contained"
+                onPress={() => handleInputFocus(line)}
+                onPressIn={handlePressIn}
+                onPressOut={handlePressOut}
+                disabled={!!editingLine}
+                style={styles.card}
+                theme={{
+                  colors: { surface: theme.colors.cardBackground.toString() },
+                }}
+              >
+                <Card.Content style={{ padding: 0 }}>
+                  <Text style={styles.input}>
+                    {line.input || "Type calculation..."}
+                  </Text>
 
-              {hasResult ? (
-                <>
-                  <View style={styles.resultContainer}>
-                    <Text style={styles.resultPrimary}>
-                      {line.result?.formatted}
-                    </Text>
-                    {line.result?.unit ? (
-                      <Text style={styles.resultSecondary}>
-                        {line.result.unit}
-                      </Text>
-                    ) : null}
-                  </View>
-
-                  {line.result?.conversions?.length ? (
-                    <View style={styles.conversionChips}>
-                      {line.result.conversions.map((conversion) => (
-                        <View
-                          key={`${line.id}-${conversion.unit}`}
-                          style={styles.conversionChip}
-                        >
-                          <Text style={styles.conversionText}>
-                            {conversion.display}
+                  {hasResult ? (
+                    <>
+                      <View style={styles.resultContainer}>
+                        <Text style={styles.resultPrimary}>
+                          {line.result?.formatted}
+                        </Text>
+                        {line.result?.unit ? (
+                          <Text style={styles.resultSecondary}>
+                            {line.result.unit}
                           </Text>
-                        </View>
-                      ))}
-                    </View>
-                  ) : null}
-                </>
-              ) : null}
+                        ) : null}
+                      </View>
 
-              {line.error ? (
-                <Text style={styles.errorText}>{line.error}</Text>
-              ) : null}
-            </Pressable>
+                      {line.result?.conversions?.length ? (
+                        <View style={styles.conversionChips}>
+                          {line.result.conversions.map((conversion) => (
+                            <Chip
+                              key={`${line.id}-${conversion.unit}`}
+                              compact
+                              mode="flat"
+                              style={styles.chipPaper}
+                              textStyle={styles.chipTextPaper}
+                            >
+                              {conversion.display}
+                            </Chip>
+                          ))}
+                        </View>
+                      ) : null}
+                    </>
+                  ) : null}
+
+                  {line.error ? (
+                    <Text style={styles.errorText}>{line.error}</Text>
+                  ) : null}
+                </Card.Content>
+              </Card>
+            </Animated.View>
           );
 
           return allowSwipe ? (
             <SwipeableRow key={line.id} onDelete={() => onDeleteLine(line.id)}>
-              {Card}
+              {PaperCard}
             </SwipeableRow>
           ) : (
             <View key={line.id} style={styles.cardWrapper}>
-              {Card}
+              {PaperCard}
             </View>
           );
         })}
 
         {canAddLine && (
-          <TouchableOpacity
-            style={styles.addLineButton}
+          <Button
+            mode="contained-tonal"
+            compact
             onPress={handleAddAndOpen}
+            style={styles.addLineButton}
             disabled={!!editingLine}
+            labelStyle={styles.addLineText}
+            contentStyle={styles.addLineContent}
+            icon={() => (
+              <HugeiconsIcon
+                icon={PlusSignIcon}
+                color={theme.colors.primary}
+                size={16}
+                strokeWidth={3.5}
+              />
+            )}
           >
-            <HugeiconsIcon
-              icon={PlusSignIcon}
-              color={theme.colors.primary}
-              size={16}
-              strokeWidth={3.5}
-            />
-            <Text style={styles.addLineText}>Add calculation</Text>
-          </TouchableOpacity>
+            Add calculation
+          </Button>
         )}
       </ScrollView>
 
-      {/* Real bottom sheet editor */}
       {editingLine && (
         <BottomSheetInputEditor
           theme={theme}

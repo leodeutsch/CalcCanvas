@@ -8,14 +8,8 @@ import React, {
   useRef,
   useState,
 } from "react";
-import {
-  Animated,
-  Easing,
-  LayoutChangeEvent,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { Animated, Easing, LayoutChangeEvent, Text, View } from "react-native";
+import { Card, IconButton } from "react-native-paper";
 import type { Theme } from "../../styles/theme";
 import { createStyles } from "./styles";
 
@@ -84,12 +78,10 @@ export const ExamplesFooter: React.FC<ExamplesFooterProps> = ({
   );
 
   const handleCollapse = useCallback(() => {
-    // keep state collapsed regardless of hidden; animation will be handled by effect
     setIsCollapsed(true);
     AsyncStorage.setItem(STORAGE_KEY, "true").catch((e) =>
       console.warn("Failed to persist footer state", e)
     );
-    // if not hidden, animate immediately for snappy feedback
     if (!hidden) animateTo(0);
   }, [animateTo, hidden]);
 
@@ -110,9 +102,7 @@ export const ExamplesFooter: React.FC<ExamplesFooterProps> = ({
   );
 
   const animatedStyle = useMemo(() => {
-    if (!contentHeight) {
-      return { opacity: animation };
-    }
+    if (!contentHeight) return { opacity: animation };
     return {
       opacity: animation,
       height: animation.interpolate({
@@ -137,22 +127,35 @@ export const ExamplesFooter: React.FC<ExamplesFooterProps> = ({
     <View style={styles.wrapper}>
       <Animated.View
         style={[styles.animatedContainer, animatedStyle]}
-        // disable touch both when hidden and when collapsed
         pointerEvents={hidden || isCollapsed ? "none" : "auto"}
       >
-        <View onLayout={handleContentLayout} style={styles.card}>
+        <Card
+          onLayout={handleContentLayout}
+          elevation={0}
+          mode="elevated"
+          style={styles.card}
+          theme={{
+            colors: {
+              surface: String(theme.colorsFlat.surface),
+              elevation: { level2: String(theme.colorsFlat.surface) } as any,
+            },
+          }}
+        >
           <View style={styles.header}>
             <Text style={styles.title}>Try these examples:</Text>
-            <TouchableOpacity
+
+            <IconButton
               onPress={handleCollapse}
               style={styles.toggleButton}
-            >
-              <HugeiconsIcon
-                icon={ViewIcon}
-                color={theme.colors.primary}
-                strokeWidth={2}
-              />
-            </TouchableOpacity>
+              icon={() => (
+                <HugeiconsIcon
+                  icon={ViewIcon}
+                  color={theme.colorsFlat.primary as string}
+                  strokeWidth={2}
+                />
+              )}
+              rippleColor={`${theme.colorsFlat.primary as string}22`}
+            />
           </View>
 
           {examples.map((example) => (
@@ -160,19 +163,25 @@ export const ExamplesFooter: React.FC<ExamplesFooterProps> = ({
               • {example}
             </Text>
           ))}
-        </View>
+        </Card>
       </Animated.View>
 
-      {/* show FAB only when collapsed AND not hidden */}
       {isCollapsed && !hidden ? (
-        <TouchableOpacity style={styles.fab} onPress={handleExpand}>
-          <HugeiconsIcon
-            icon={ViewOffIcon}
-            color={theme.colors.primary}
-            size={22}
-            strokeWidth={2}
-          />
-        </TouchableOpacity>
+        <IconButton
+          onPress={handleExpand}
+          style={styles.fab}
+          icon={() => (
+            <HugeiconsIcon
+              icon={ViewOffIcon}
+              color={theme.colorsFlat.primary as string}
+              size={22}
+              strokeWidth={2}
+            />
+          )}
+          mode="contained"
+          containerColor={theme.colorsFlat.surface as string}
+          rippleColor={`${theme.colorsFlat.primary as string}22`}
+        />
       ) : null}
     </View>
   );

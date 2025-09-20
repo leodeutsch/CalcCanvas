@@ -18,11 +18,11 @@ export const createStyles = (theme: Theme) =>
       ...(theme.shadows.high ?? {}),
     },
     card: {
-      paddingHorizontal: theme.spacing.xl + theme.spacing.sm,
-      paddingVertical: theme.spacing.lg + theme.spacing.sm,
+      paddingHorizontal: theme.spacing.sm,
+      paddingVertical: theme.spacing.xs,
       maxHeight: 360,
       overflow: "hidden",
-      borderRadius: theme.radii.lg,
+      borderRadius: theme.spacing.sm + theme.spacing.sm,
       backgroundColor: theme.colors.cardBackground,
     },
     input: {
@@ -62,6 +62,18 @@ export const createStyles = (theme: Theme) =>
       marginRight: theme.spacing.xs,
       marginBottom: theme.spacing.xs,
     },
+    chipPaper: {
+      marginRight: theme.spacing.sm,
+      marginBottom: theme.spacing.sm,
+      borderRadius: theme.radii.md,
+      backgroundColor: theme.colors.chipBackground,
+    },
+    chipTextPaper: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: theme.colors.secondaryText,
+    },
+
     conversionText: {
       fontSize: 12,
       fontWeight: "500",
@@ -74,24 +86,22 @@ export const createStyles = (theme: Theme) =>
       fontStyle: "italic",
     },
     addLineButton: {
-      display: "flex",
-      flexDirection: "row",
-      width: "48%",
+      width: "56%",
       marginHorizontal: "auto",
-      paddingVertical: theme.spacing.lg,
       borderRadius: theme.radii.xl,
-      alignItems: "center",
-      justifyContent: "center",
       backgroundColor: theme.colors.surface,
-      ...(theme.shadows.medium ?? {}),
+    },
+    addLineContent: {
+      paddingVertical: theme.spacing.sm,
+      width: "100%",
+      borderRadius: theme.radii.xl,
     },
     addLineText: {
       fontSize: 16,
       color: theme.colors.primary,
       fontWeight: "600",
-      marginLeft: theme.spacing.sm,
     },
-  
+
     deleteBackdrop: {
       position: "absolute",
       left: 0,
@@ -105,7 +115,7 @@ export const createStyles = (theme: Theme) =>
       paddingRight: theme.spacing.xl + theme.spacing.sm,
     },
     deleteText: {
-      color: "#FFFFFF",
+      color: theme.colors.text,
       fontWeight: "700",
     },
   });

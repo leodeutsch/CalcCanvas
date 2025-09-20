@@ -8,7 +8,8 @@ export const createStyles = (theme: Theme) =>
       flexDirection: "row",
       justifyContent: "space-between",
       alignItems: "center",
-      paddingHorizontal: theme.spacing.xl,
+      paddingLeft: theme.spacing.sm,
+      paddingRight: theme.spacing.xl,
       paddingVertical: theme.spacing.lg + theme.spacing.sm,
     },
     title: {

@@ -5,6 +5,7 @@ export interface ThemeColors {
   cardBackground: ColorValue;
   surface: ColorValue;
   primary: ColorValue;
+  accent: ColorValue;
   text: ColorValue;
   secondaryText: ColorValue;
   border: ColorValue;
@@ -20,7 +21,6 @@ export interface ThemeShadow {
   shadowRadius?: number;
   elevation?: number;
 }
-
 export interface ThemeShadows {
   low: ThemeShadow;
   medium: ThemeShadow;
@@ -34,7 +34,6 @@ export interface ThemeSpacing {
   lg: number;
   xl: number;
 }
-
 export interface ThemeRadii {
   sm: number;
   md: number;
@@ -42,65 +41,88 @@ export interface ThemeRadii {
   xl: number;
 }
 
+export interface ThemeColorsFlat {
+  background: string;
+  cardBackground: string;
+  surface: string;
+  primary: string;
+  accent: string;
+  text: string;
+  secondaryText: string;
+  border: string;
+  success: string;
+  error: string;
+  chipBackground: string;
+}
+
 export interface Theme {
   isDark: boolean;
   platform: typeof Platform.OS;
   colors: ThemeColors;
+  colorsFlat: ThemeColorsFlat;
   shadows: ThemeShadows;
   spacing: ThemeSpacing;
   radii: ThemeRadii;
 }
 
+/* ===================== Blueprint Tech – LIGHT (iOS) ===================== */
 const IOS_LIGHT_COLORS: ThemeColors = {
-  background: "#e0edff",
-  cardBackground: "#fdfdff",
-  surface: "#ffffff",
-  primary: "#2563eb",
-  text: "#0f172a",
+  background: "#EAF2FF",
+  cardBackground: "#F7FAFF",
+  surface: "#FFFFFF",
+  primary: "#2563EB",
+  accent: "#22D3EE",
+  text: "#0F172A",
   secondaryText: "#475569",
-  border: "#cbd5f5",
-  success: "#16a34a",
-  error: "#dc2626",
+  border: "#CBD5F1",
+  success: "#10B981",
+  error: "#EF4444",
+  chipBackground: "rgba(37, 99, 235, 0.12)", // primary @ 12%
+};
+
+/* ===================== Blueprint Tech – DARK (iOS) ===================== */
+const IOS_DARK_COLORS: ThemeColors = {
+  background: "#0F172A",
+  cardBackground: "#1E293B",
+  surface: "#1B2536",
+  primary: "#60A5FA",
+  accent: "#67E8F9",
+  text: "#E2E8F0",
+  secondaryText: "#94A3B8",
+  border: "#263446",
+  success: "#34D399",
+  error: "#F87171",
+  chipBackground: "rgba(96, 165, 250, 0.16)",
+};
+
+/* ===================== Blueprint Tech – LIGHT (Android fallback) ===================== */
+const ANDROID_LIGHT_COLORS: ThemeColors = {
+  background: "#EAF2FF",
+  cardBackground: "#F7FAFF",
+  surface: "#FFFFFF",
+  primary: "#2563EB",
+  accent: "#22D3EE",
+  text: "#0F172A",
+  secondaryText: "#475569",
+  border: "#CBD5F1",
+  success: "#10B981",
+  error: "#EF4444",
   chipBackground: "rgba(37, 99, 235, 0.12)",
 };
 
-const IOS_DARK_COLORS: ThemeColors = {
-  background: "#0f172a",
-  cardBackground: "#1e293b",
-  surface: "#1b2536",
-  primary: "#38bdf8",
-  text: "#e2e8f0",
-  secondaryText: "#94a3b8",
-  border: "#1e293b",
-  success: "#22d3ee",
-  error: "#f87171",
-  chipBackground: "rgba(148, 163, 184, 0.2)",
-};
-
-const ANDROID_LIGHT_COLORS: ThemeColors = {
-  background: "#fef7ff",
-  cardBackground: "#fef7ff",
-  surface: "#f8f2ff",
-  primary: "#6750a4",
-  text: "#1c1b1f",
-  secondaryText: "#4f4d55",
-  border: "#d7c6f6",
-  success: "#006d3d",
-  error: "#b3261e",
-  chipBackground: "rgba(103, 80, 164, 0.14)",
-};
-
+/* ===================== Blueprint Tech – DARK (Android fallback) ===================== */
 const ANDROID_DARK_COLORS: ThemeColors = {
-  background: "#141218",
-  cardBackground: "#1d1b20",
-  surface: "#1f1829",
-  primary: "#d0bcff",
-  text: "#e6e1e5",
-  secondaryText: "#cac4d0",
-  border: "#4a4458",
-  success: "#4ade80",
-  error: "#f2b8b5",
-  chipBackground: "rgba(208, 188, 255, 0.16)",
+  background: "#0F172A",
+  cardBackground: "#1E293B",
+  surface: "#1F2A3A",
+  primary: "#60A5FA",
+  accent: "#67E8F9",
+  text: "#E2E8F0",
+  secondaryText: "#94A3B8",
+  border: "#263446",
+  success: "#34D399",
+  error: "#F87171",
+  chipBackground: "rgba(96, 165, 250, 0.16)",
 };
 
 const resolveAndroidDynamicColor = (
@@ -112,15 +134,13 @@ const resolveAndroidDynamicColor = (
 ): ColorValue => {
   try {
     return PlatformColor(isDark ? darkAttr : lightAttr);
-  } catch (error) {
+  } catch {
     return isDark ? fallbackDark : fallbackLight;
   }
 };
 
 const resolveThemeColors = (isDark: boolean): ThemeColors => {
-  if (Platform.OS === "ios") {
-    return isDark ? IOS_DARK_COLORS : IOS_LIGHT_COLORS;
-  }
+  if (Platform.OS === "ios") return isDark ? IOS_DARK_COLORS : IOS_LIGHT_COLORS;
 
   return {
     background: resolveAndroidDynamicColor(
@@ -151,6 +171,7 @@ const resolveThemeColors = (isDark: boolean): ThemeColors => {
       ANDROID_DARK_COLORS.primary,
       isDark
     ),
+    accent: isDark ? ANDROID_DARK_COLORS.accent : ANDROID_LIGHT_COLORS.accent,
     text: resolveAndroidDynamicColor(
       "@android:color/system_neutral1_900",
       "@android:color/system_neutral1_50",
@@ -196,7 +217,7 @@ const resolveThemeColors = (isDark: boolean): ThemeColors => {
   };
 };
 
-const createShadows = (colors: ThemeColors): ThemeShadows => {
+const createShadows = (_colors: ThemeColors): ThemeShadows => {
   if (Platform.OS === "ios") {
     return {
       low: {
@@ -219,38 +240,40 @@ const createShadows = (colors: ThemeColors): ThemeShadows => {
       },
     };
   }
-
   const elevation = (value: number): ThemeShadow => ({ elevation: value });
-
-  return {
-    low: elevation(4),
-    medium: elevation(8),
-    high: elevation(12),
-  };
+  return { low: elevation(4), medium: elevation(8), high: elevation(12) };
 };
 
-const SPACING: ThemeSpacing = {
-  xs: 4,
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 24,
-};
+const SPACING: ThemeSpacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 };
+const RADII: ThemeRadii = { sm: 12, md: 18, lg: 24, xl: 32 };
 
-const RADII: ThemeRadii = {
-  sm: 12,
-  md: 18,
-  lg: 24,
-  xl: 32,
-};
+const toFlat = (c: ThemeColors): ThemeColorsFlat => ({
+  background: String(c.background),
+  cardBackground: String(c.cardBackground),
+  surface: String(c.surface),
+  primary: String(c.primary),
+  accent: String(c.accent),
+  text: String(c.text),
+  secondaryText: String(c.secondaryText),
+  border: String(c.border),
+  success: String(c.success),
+  error: String(c.error),
+  chipBackground: String(c.chipBackground),
+});
 
 export const createTheme = (isDark: boolean): Theme => {
   const colors = resolveThemeColors(isDark);
+
+  const colorsFlat: ThemeColorsFlat =
+    Platform.OS === "ios"
+      ? toFlat(isDark ? IOS_DARK_COLORS : IOS_LIGHT_COLORS)
+      : toFlat(isDark ? ANDROID_DARK_COLORS : ANDROID_LIGHT_COLORS);
 
   return {
     isDark,
     platform: Platform.OS,
     colors,
+    colorsFlat,
     shadows: createShadows(colors),
     spacing: SPACING,
     radii: RADII,

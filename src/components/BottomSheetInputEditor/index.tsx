@@ -3,6 +3,7 @@ import BottomSheet, {
   BottomSheetFooter,
   BottomSheetView,
 } from "@gorhom/bottom-sheet";
+import * as Clipboard from "expo-clipboard";
 import React, {
   useCallback,
   useEffect,
@@ -16,7 +17,6 @@ import {
   ScrollView,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from "react-native";
 import Animated, {
@@ -27,6 +27,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { Button, Chip } from "react-native-paper";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { useEvaluatedInput } from "../../hooks/useEvaluatedInput";
 import { useMarketData } from "../../hooks/useMarketData";
@@ -47,7 +48,6 @@ interface BottomSheetInputEditorProps {
 export const BottomSheetInputEditor: React.FC<BottomSheetInputEditorProps> = ({
   theme,
   line,
-  placeholderColor,
   onSave,
   onCancel,
   onOpenChange,
@@ -70,6 +70,14 @@ export const BottomSheetInputEditor: React.FC<BottomSheetInputEditorProps> = ({
   const evalResult = useEvaluatedInput(debouncedValue, evalFn);
 
   const snapPoints = useMemo(() => ["96%"], []);
+
+  const copyToClipboard = useCallback(async (text: string) => {
+    try {
+      await Clipboard.setStringAsync(text);
+    } catch (err) {
+      console.warn("Clipboard copy failed", err);
+    }
+  }, []);
 
   const btnAnim = useSharedValue(0);
   const doneAnimStyle = useAnimatedStyle(() => ({
@@ -147,14 +155,14 @@ export const BottomSheetInputEditor: React.FC<BottomSheetInputEditorProps> = ({
           ]}
           pointerEvents="box-none"
         >
-          <TouchableOpacity
-            activeOpacity={0.9}
+          <Button
+            mode="contained"
             onPress={handleDone}
             style={styles.doneButton}
-            accessibilityLabel="Apply calculation and close"
+            compact
           >
-            <Text style={styles.doneText}>Done</Text>
-          </TouchableOpacity>
+            Done
+          </Button>
         </Animated.View>
       </BottomSheetFooter>
     ),
@@ -205,9 +213,9 @@ export const BottomSheetInputEditor: React.FC<BottomSheetInputEditorProps> = ({
           value={value}
           onChangeText={setValue}
           placeholder="Type calculation..."
-          placeholderTextColor={placeholderColor}
+          placeholderTextColor={`${theme.colorsFlat.text}60`}
           multiline
-          submitBehavior="blurAndSubmit"
+          submitBehavior="newline"
           enablesReturnKeyAutomatically
           scrollEnabled={false}
           autoFocus={false}
@@ -254,22 +262,17 @@ export const BottomSheetInputEditor: React.FC<BottomSheetInputEditorProps> = ({
               {evalResult.result.conversions?.length ? (
                 <View style={styles.chipsWrap}>
                   {evalResult.result.conversions.map((c) => (
-                    <View
+                    <Chip
                       key={`conv-${c.unit}`}
-                      style={[
-                        styles.chip,
-                        { backgroundColor: theme.colors.chipBackground },
-                      ]}
+                      mode="flat"
+                      compact
+                      onLongPress={() => copyToClipboard(String(c.display))}
+                      style={styles.chip}
+                      textStyle={styles.chipText}
+                      accessibilityLabel={`Conversion ${c.display}`}
                     >
-                      <Text
-                        style={[
-                          styles.chipText,
-                          { color: theme.colors.secondaryText },
-                        ]}
-                      >
-                        {c.display}
-                      </Text>
-                    </View>
+                      {c.display}
+                    </Chip>
                   ))}
                 </View>
               ) : null}

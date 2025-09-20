@@ -1,5 +1,4 @@
-import { Platform, StyleSheet } from "react-native";
-
+import { StyleSheet } from "react-native";
 import type { Theme } from "../../styles/theme";
 
 export const createStyles = (theme: Theme) =>
@@ -11,41 +10,25 @@ export const createStyles = (theme: Theme) =>
       paddingHorizontal: theme.spacing.lg,
       alignItems: "center",
     },
-    tab: {
-      paddingHorizontal: theme.spacing.md + theme.spacing.sm,
-      paddingVertical: theme.spacing.md,
+    pillWrapper: {
       marginRight: theme.spacing.sm,
-      backgroundColor: theme.colors.surface,
+    },
+    pill: {
       borderRadius: theme.radii.xl,
-      minWidth: 80,
-      alignItems: "center",
+      // minWidth: 80,
       justifyContent: "center",
-      ...(Platform.OS === "ios" ? theme.shadows.low : theme.shadows.low),
+      height: 40,
+      paddingHorizontal: theme.spacing.sm,
     },
-    activeTab: {
-      backgroundColor: theme.colors.primary,
-    },
-    tabText: {
+    pillText: {
       fontSize: 16,
-      color: theme.colors.secondaryText,
-      fontWeight: "500",
-    },
-    activeTabText: {
-      color: "#FFFFFF",
       fontWeight: "600",
     },
-    addTab: {
+    addBtn: {
       width: 42,
       height: 42,
       borderRadius: 21,
-      backgroundColor: theme.colors.surface,
-      justifyContent: "center",
-      alignItems: "center",
-      ...(Platform.OS === "ios" ? theme.shadows.low : theme.shadows.low),
-    },
-    addTabText: {
-      fontSize: 22,
-      color: theme.colors.primary,
-      fontWeight: "500",
+      alignSelf: "center",
+      marginLeft: theme.spacing.sm,
     },
   });

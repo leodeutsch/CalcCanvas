@@ -4,6 +4,7 @@ import { Text, TouchableOpacity, View } from "react-native";
 import { StarAward02Icon, StarIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import type { Theme } from "../../styles/theme";
+import { Wordmark } from "../Wordmark";
 import { createStyles } from "./styles";
 
 interface HeaderProps {
@@ -23,7 +24,17 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>CalcCanvas</Text>
+      {/* <Text style={styles.title}>CalcCanvas</Text> */}
+      <View>
+        <Wordmark
+          theme={theme}
+          height={64}
+          tracking={4}
+          gapAdjust={-56}
+          textColor={theme.colorsFlat.primary}
+          accentColor={theme.colorsFlat.accent}
+        />
+      </View>
       {!isPremium ? (
         <TouchableOpacity style={styles.premiumButton} onPress={onPressPremium}>
           <HugeiconsIcon

@@ -12,11 +12,15 @@ export const createStyles = (theme: Theme) =>
     input: {
       fontSize: 16,
       minHeight: 44,
-      paddingVertical: Platform.OS === "ios" ? 8 : 6,
+      paddingVertical: Platform.OS === "ios" ? 12 : 8,
+      paddingHorizontal: theme.spacing.lg,
+      backgroundColor: theme.colors.chipBackground,
+      borderRadius: theme.radii.md,
     },
     resultScroll: {
       flex: 1,
-      marginTop: theme.spacing.md,
+      marginTop: theme.spacing.xl,
+      paddingHorizontal: theme.spacing.lg,
     },
     resultRow: {
       flexDirection: "row",
@@ -38,19 +42,20 @@ export const createStyles = (theme: Theme) =>
       marginTop: 6,
     },
     chip: {
-      paddingVertical: 6,
-      paddingHorizontal: 10,
-      borderRadius: 10,
-      marginRight: 8,
-      marginBottom: 8,
+      borderRadius: theme.radii.md,
+      marginRight: theme.spacing.sm,
+      marginBottom: theme.spacing.sm,
+      backgroundColor: theme.colors.chipBackground,
     },
     chipText: {
       fontSize: 14,
       fontWeight: "600",
+      color: theme.colors.text,
     },
     errorText: {
       fontSize: 14,
       fontStyle: "italic",
+      color: theme.colors.error,
     },
     doneButtonFloat: {
       position: "absolute",
@@ -61,9 +66,9 @@ export const createStyles = (theme: Theme) =>
     },
     doneButton: {
       backgroundColor: theme.colors.primary,
-      borderRadius: theme.radii.md,
-      paddingVertical: theme.spacing.sm,
-      paddingHorizontal: theme.spacing.lg,
+      borderRadius: theme.radii.xl,
+      paddingVertical: theme.spacing.xs,
+      paddingHorizontal: theme.spacing.md,
       ...(Platform.OS === "ios"
         ? {
             shadowColor: theme.shadows.medium.shadowColor,
@@ -79,5 +84,17 @@ export const createStyles = (theme: Theme) =>
       color: theme.colors.background,
       fontWeight: "600",
       fontSize: 16,
+    },
+    snackWrapper: {
+      position: "absolute",
+      top: 0,
+      left: 72,
+      right: 72,
+      zIndex: 10,
+    },
+    snackStyle: {
+      width: "64%",
+      backgroundColor: theme.colors.primary,
+      borderRadius: theme.radii.lg,
     },
   });

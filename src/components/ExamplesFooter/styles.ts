@@ -22,7 +22,6 @@ export const createStyles = (theme: Theme) =>
       justifyContent: "space-between",
       alignItems: "center",
       marginBottom: theme.spacing.sm,
-      paddingRight: theme.spacing.sm,
     },
     title: {
       fontSize: 16,
@@ -35,23 +34,22 @@ export const createStyles = (theme: Theme) =>
       marginBottom: theme.spacing.xs,
       fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
     },
-    toggleButton: {
-      padding: theme.spacing.xs + 2,
-      borderRadius: theme.radii.sm,
-    },
+    toggleButton: {},
     fab: {
       position: "absolute",
       right: theme.spacing.xl,
       bottom: theme.spacing.md,
       backgroundColor: theme.colors.surface,
       paddingHorizontal: theme.spacing.md,
-      paddingVertical: theme.spacing.sm,
-      borderRadius: theme.radii.md,
+      paddingTop: theme.spacing.lg,
+      paddingBottom: theme.spacing.md,
+      borderRadius: theme.radii.xl,
       alignItems: "center",
       justifyContent: "center",
       ...(Platform.OS === "ios" ? theme.shadows.medium : theme.shadows.medium),
     },
     fabIcon: {
       color: theme.colors.primary,
+      alignSelf: "center",
     },
   });
