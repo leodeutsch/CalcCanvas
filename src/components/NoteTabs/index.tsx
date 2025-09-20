@@ -60,8 +60,6 @@ export const NoteTabs: React.FC<NoteTabsProps> = ({
                 { color: isActive ? C.cardBackground : C.secondaryText },
               ]}
               mode="flat"
-              elevated={isActive}
-              elevation={isActive ? 4 : 0}
               rippleColor={withAlpha22(C.primary)}
               onPress={() => onSelect(note.id)}
               onLongPress={() => onDeleteRequest(note.id)}

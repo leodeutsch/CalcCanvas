@@ -27,7 +27,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Button, Chip } from "react-native-paper";
+import { Button, Chip, HelperText } from "react-native-paper";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { useEvaluatedInput } from "../../hooks/useEvaluatedInput";
 import { useMarketData } from "../../hooks/useMarketData";
@@ -233,9 +233,9 @@ export const BottomSheetInputEditor: React.FC<BottomSheetInputEditorProps> = ({
           keyboardShouldPersistTaps="always"
         >
           {evalResult?.error ? (
-            <Text style={[styles.errorText, { color: theme.colors.error }]}>
+            <HelperText type="error" visible style={[styles.errorText]}>
               {evalResult.error}
-            </Text>
+            </HelperText>
           ) : evalResult?.result ? (
             <View>
               <View style={styles.resultRow}>

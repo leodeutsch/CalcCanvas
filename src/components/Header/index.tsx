@@ -24,7 +24,6 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <View style={styles.container}>
-      {/* <Text style={styles.title}>CalcCanvas</Text> */}
       <View>
         <Wordmark
           theme={theme}

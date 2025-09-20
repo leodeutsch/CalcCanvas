@@ -12,12 +12,9 @@ export const createStyles = (theme: Theme) =>
       paddingRight: theme.spacing.xl,
       paddingVertical: theme.spacing.lg + theme.spacing.sm,
     },
-    title: {
-      fontSize: 28,
-      fontWeight: Platform.OS === "ios" ? "700" : "bold",
-      color: theme.colors.text,
-    },
     premiumButton: {
+      position: "absolute",
+      right: theme.spacing.lg,
       display: "flex",
       flexDirection: "row",
       alignItems: "center",

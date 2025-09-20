@@ -1,184 +1,230 @@
-import React, { useEffect, useMemo, useRef } from "react";
-import { Animated, Easing, Text, TouchableOpacity, View } from "react-native";
+import * as React from "react";
+import { StyleSheet, Text, View } from "react-native";
+import {
+  Button,
+  Dialog,
+  Portal,
+  useTheme as usePaperTheme,
+} from "react-native-paper";
 import type { Theme } from "../../styles/theme";
 
-export type PopupAction = {
+export type DialogVariant =
+  | "info"
+  | "success"
+  | "warning"
+  | "error"
+  | "confirm";
+
+export type DialogAction = {
   label: string;
   onPress?: () => void;
   variant?: "primary" | "secondary" | "destructive";
+  testID?: string;
 };
 
 type Props = {
-  theme: Theme;
+  theme: Theme; // seu tema (spacing/radii)
   visible: boolean;
-  title: string;
-  message: string;
-  actions: PopupAction[];
+  onDismiss: () => void;
+  title?: string;
+  message?: string;
+  variant?: DialogVariant;
+  actions?: DialogAction[];
+  /** opcional: largura máxima no tablet/desk */
+  maxWidth?: number;
 };
 
 export const ThemedPopup: React.FC<Props> = ({
   theme,
   visible,
+  onDismiss,
   title,
   message,
-  actions,
+  variant = "info",
+  actions = [],
+  maxWidth = 420,
 }) => {
-  const opacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(12)).current;
+  const paper = usePaperTheme();
 
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(opacity, {
-        toValue: visible ? 1 : 0,
-        duration: 200,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }),
-      Animated.timing(translateY, {
-        toValue: visible ? 0 : 12,
-        duration: 220,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [opacity, translateY, visible]);
-
-  const overlayStyle = useMemo(
-    () => ({
-      position: "absolute" as const,
-      left: 0,
-      right: 0,
-      top: 0,
-      bottom: 0,
-      backgroundColor: "rgba(0,0,0,0.28)",
-      alignItems: "center" as const,
-      justifyContent: "center" as const,
-      paddingHorizontal: 24,
-    }),
-    []
-  );
-
-  const cardStyle = useMemo(
-    () => ({
-      width: "100%" as const,
-      maxWidth: 420,
-      borderRadius: theme.radii.lg,
-      backgroundColor: theme.colors.surface,
-      padding: theme.spacing.xl,
-      ...(theme.shadows.medium ?? {}),
-    }),
-    [theme]
-  );
-
-  const titleStyle = useMemo(
-    () => ({
-      fontSize: 18,
-      fontWeight: "700" as const,
-      color: theme.colors.text,
-      marginBottom: theme.spacing.sm,
-    }),
-    [theme]
-  );
-
-  const messageStyle = useMemo(
-    () => ({
-      fontSize: 14,
-      color: theme.colors.secondaryText,
-      marginBottom: theme.spacing.lg,
-    }),
-    [theme]
-  );
-
-  const actionsRow = useMemo(
-    () => ({
-      flexDirection: "row" as const,
-      justifyContent: "flex-end" as const,
-    }),
-    []
-  );
-
-  const buttonBase = useMemo(
-    () => ({
-      paddingHorizontal: theme.spacing.lg,
-      paddingVertical: theme.spacing.sm,
-      borderRadius: theme.radii.md,
-      marginLeft: theme.spacing.sm,
-      minWidth: 96,
-      alignItems: "center" as const,
-      justifyContent: "center" as const,
-    }),
-    [theme]
-  );
-
-  const getButtonStyle = (variant: PopupAction["variant"]) => {
+  // === TONS por variant (usa Paper theme + suas coresFlat) ===
+  const tone = React.useMemo(() => {
+    const c = paper.colors;
     switch (variant) {
-      case "destructive":
+      case "success":
         return {
-          ...buttonBase,
-          backgroundColor: theme.colors.error,
+          accent: String(theme.colorsFlat.success),
+          title: c.onSurface,
+          subtitle: c.onSurfaceVariant,
+          badgeBg: `${theme.colorsFlat.success}1A`, // ~10% alpha
+          border: theme.colorsFlat.border,
         };
-      case "primary":
+      case "warning":
+        // usa "error" claro como destaque (ou ajuste pra um amber se quiser no futuro)
         return {
-          ...buttonBase,
-          backgroundColor: theme.colors.primary,
+          accent: "#F59E0B",
+          title: c.onSurface,
+          subtitle: c.onSurfaceVariant,
+          badgeBg: "#F59E0B1A",
+          border: theme.colorsFlat.border,
         };
+      case "error":
+        return {
+          accent: String(theme.colorsFlat.error),
+          title: c.onSurface,
+          subtitle: c.onSurfaceVariant,
+          badgeBg: `${theme.colorsFlat.error}1A`,
+          border: theme.colorsFlat.border,
+        };
+      case "confirm":
+        return {
+          accent: String(theme.colorsFlat.primary),
+          title: c.onSurface,
+          subtitle: c.onSurfaceVariant,
+          badgeBg: `${theme.colorsFlat.primary}1A`,
+          border: theme.colorsFlat.border,
+        };
+      case "info":
       default:
         return {
-          ...buttonBase,
-          backgroundColor: theme.colors.surface,
-          borderWidth: 1,
-          borderColor: theme.colors.border,
+          accent: String(theme.colorsFlat.accent ?? theme.colorsFlat.primary),
+          title: c.onSurface,
+          subtitle: c.onSurfaceVariant,
+          badgeBg: `${theme.colorsFlat.accent ?? theme.colorsFlat.primary}1A`,
+          border: theme.colorsFlat.border,
         };
     }
-  };
+  }, [paper.colors, theme.colorsFlat, variant]);
 
-  const getButtonTextStyle = (variant: PopupAction["variant"]) => {
-    switch (variant) {
-      case "destructive":
-      case "primary":
-        return { color: "#FFFFFF", fontWeight: "700" as const, fontSize: 14 };
-      default:
-        return {
-          color: theme.colors.text,
-          fontWeight: "600" as const,
-          fontSize: 14,
-        };
+  // === mapeia variante dos botões para modo/cores do Paper ===
+  const renderAction = (a: DialogAction, idx: number) => {
+    const common = { style: [styles.btn, { marginLeft: theme.spacing.sm }] };
+
+    if (a.variant === "destructive") {
+      return (
+        <Button
+          key={`${a.label}-${idx}`}
+          mode="contained"
+          onPress={a.onPress}
+          {...common}
+          buttonColor={String(theme.colorsFlat.error)}
+          textColor="#FFFFFF"
+          testID={a.testID}
+        >
+          {a.label}
+        </Button>
+      );
     }
-  };
 
-  if (!visible) {
-    // Keep it mounted for smooth fade-out; pointerEvents none when hidden
-  }
+    if (a.variant === "secondary") {
+      return (
+        <Button
+          key={`${a.label}-${idx}`}
+          mode="outlined"
+          onPress={a.onPress}
+          {...common}
+          textColor={String(paper.colors.onSurface)}
+          style={[
+            common.style,
+            { borderColor: String(theme.colorsFlat.border) },
+          ]}
+        >
+          {a.label}
+        </Button>
+      );
+    }
+
+    // primary (default)
+    return (
+      <Button
+        key={`${a.label}-${idx}`}
+        mode="contained"
+        onPress={a.onPress}
+        {...common}
+        buttonColor={String(theme.colorsFlat.primary)}
+        textColor="#FFFFFF"
+      >
+        {a.label}
+      </Button>
+    );
+  };
 
   return (
-    <Animated.View
-      pointerEvents={visible ? "auto" : "none"}
-      style={[overlayStyle, { opacity }]}
-    >
-      <Animated.View
+    <Portal>
+      <Dialog
+        visible={visible}
+        onDismiss={onDismiss}
         style={[
-          cardStyle,
+          styles.dialog,
           {
-            transform: [{ translateY }],
+            borderRadius: theme.radii.lg,
+            maxWidth,
+            alignSelf: "center",
+            backgroundColor: theme.colorsFlat.surface,
           },
         ]}
       >
-        <Text style={titleStyle}>{title}</Text>
-        <Text style={messageStyle}>{message}</Text>
+        {title ? (
+          <Dialog.Title
+            style={[
+              styles.title,
+              {
+                color: tone.title,
+                marginBottom: theme.spacing.xs,
+                marginTop: theme.spacing.xl,
+              },
+            ]}
+          >
+            {title}
+          </Dialog.Title>
+        ) : null}
 
-        <View style={actionsRow}>
-          {actions.map((a) => (
-            <TouchableOpacity
-              key={a.label}
-              onPress={a.onPress}
-              activeOpacity={0.85}
-              style={getButtonStyle(a.variant)}
+        {message ? (
+          <Dialog.Content>
+            <Text
+              style={[
+                styles.message,
+                { color: tone.subtitle, marginBottom: theme.spacing.md },
+              ]}
             >
-              <Text style={getButtonTextStyle(a.variant)}>{a.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </Animated.View>
-    </Animated.View>
+              {message}
+            </Text>
+          </Dialog.Content>
+        ) : null}
+
+        {/* Ações alinhadas à direita */}
+        <Dialog.Actions
+          style={{
+            paddingHorizontal: theme.spacing.lg,
+            paddingBottom: theme.spacing.lg,
+          }}
+        >
+          <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>
+            {actions.map(renderAction)}
+          </View>
+        </Dialog.Actions>
+      </Dialog>
+    </Portal>
   );
 };
+
+const styles = StyleSheet.create({
+  dialog: {
+    width: "90%",
+    paddingTop: 0, // vamos usar a barra de acento no topo
+  },
+  accentBar: {
+    height: 4,
+    width: "100%",
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: "700",
+  },
+  message: {
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  btn: {
+    minWidth: 96,
+  },
+});

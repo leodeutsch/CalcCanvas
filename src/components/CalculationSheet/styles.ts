@@ -15,7 +15,7 @@ export const createStyles = (theme: Theme) =>
     cardWrapper: {
       marginBottom: theme.spacing.xl + theme.spacing.sm,
       borderRadius: theme.radii.lg,
-      ...(theme.shadows.high ?? {}),
+      ...(theme.shadows.low ?? {}),
     },
     card: {
       paddingHorizontal: theme.spacing.sm,
@@ -23,7 +23,7 @@ export const createStyles = (theme: Theme) =>
       maxHeight: 360,
       overflow: "hidden",
       borderRadius: theme.spacing.sm + theme.spacing.sm,
-      backgroundColor: theme.colors.cardBackground,
+      // backgroundColor: theme.colors.cardBackground,
     },
     input: {
       fontSize: 16,

@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Alert, View } from "react-native";
+import { View } from "react-native";
 
 import {
   CalculationSheet,
@@ -113,19 +113,17 @@ export const MainScreen: React.FC<MainScreenProps> = ({ theme }) => {
         return;
       }
 
-      // Keep existing delete confirmation for other sheets
-      Alert.alert(
-        "Delete sheet",
-        `Are you sure you want to delete "${target.title}"?`,
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Delete",
-            style: "destructive",
-            onPress: () => deleteNote(noteId),
-          },
-        ]
-      );
+      setPopupVisible(true);
+      setPopupTitle("Delete sheet");
+      setPopupMessage(`Are you sure you want to delete "${target.title}"?`);
+      setPopupActions([
+        { label: "Cancel", variant: "secondary", onPress: hidePopup },
+        {
+          label: "Delete",
+          variant: "destructive",
+          onPress: () => deleteNote(noteId),
+        },
+      ]);
     },
     [deleteNote, notes, hidePopup, showPopup]
   );
@@ -208,6 +206,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({ theme }) => {
         title={popupTitle}
         message={popupMessage}
         actions={popupActions}
+        onDismiss={hidePopup}
       />
     </View>
   );
