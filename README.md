@@ -54,7 +54,6 @@
 
 ## Screenshots
 
-> Replace the placeholders with your real captures.
 
 | Main                                 | Editor                                   |
 | ------------------------------------ | ---------------------------------------- |
