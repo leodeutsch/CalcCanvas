@@ -56,9 +56,9 @@
 
 > Replace the placeholders with your real captures.
 
-| Main                                         | Editor                                           |
-| -------------------------------------------- | ------------------------------------------------ |
-| ![Main](assets/screens/screenshots/main.jpg) | ![Editor](assets/screens/screenshots/editor.jpg) |
+| Main                                 | Editor                                   |
+| ------------------------------------ | ---------------------------------------- |
+| ![Main](assets/screenshots/main.jpg) | ![Editor](assets/screenshots/editor.jpg) |
 
 ---
 
