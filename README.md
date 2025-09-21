@@ -1,5 +1,5 @@
 <p align="center">
-  <svg src="src/components/Wordmark/WordmarkLight" alt="CalcCanvas" height="64" />
+  <img src="assets/light-title.png" alt="CalcCanvas" height="64" />
 </p>
 
 <p align="center">
