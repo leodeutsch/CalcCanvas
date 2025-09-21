@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/brand/wordmark-light.svg" alt="CalcCanvas" height="64" />
+  <svg src="src/components/Wordmark/WordmarkLight" alt="CalcCanvas" height="64" />
 </p>
 
 <p align="center">
@@ -23,17 +23,6 @@
 - [Screenshots](#screenshots)
 - [Architecture](#architecture)
 - [Tech stack](#tech-stack)
-- [Folder structure](#folder-structure)
-- [Getting started](#getting-started)
-- [Builds (EAS)](#builds-eas)
-- [Configuration & theming](#configuration--theming)
-- [Performance highlights](#performance-highlights)
-- [Accessibility](#accessibility)
-- [Testing](#testing)
-- [Roadmap](#roadmap)
-- [Contributing](#contributing)
-- [License](#license)
-- [Acknowledgements](#acknowledgements)
 
 ---
 
