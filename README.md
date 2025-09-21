@@ -18,6 +18,8 @@
 ---
 
 ## Table of contents
+
+- [Table of contents](#table-of-contents)
 - [Overview](#overview)
 - [Features](#features)
 - [Screenshots](#screenshots)
@@ -39,13 +41,13 @@
 
 ## Features
 
-- 🧮 **Live evaluation** with formatted results and conversion chips  
-- 💱 **FX support** (base currency persisted; stale badge when past TTL)  
-- 🗒️ **Sheets & cards** (3 per sheet), swipe-to-delete, premium gating hooks  
-- ⌨️ **Bottom-sheet editor** ([@gorhom/bottom-sheet]) with real-time preview  
-- 🧭 **Consistent theming** (light/dark “Blueprint Tech” palette) via a custom theme + `react-native-paper`  
-- 🧷 **Clipboard** support (long-press conversion chips)  
-- ⚡ **Performance**: memoized evaluation, debounced input, batched updates  
+- 🧮 **Live evaluation** with formatted results and conversion chips
+- 💱 **FX support** (base currency persisted; stale badge when past TTL)
+- 🗒️ **Sheets & cards** (3 per sheet), swipe-to-delete, premium gating hooks
+- ⌨️ **Bottom-sheet editor** ([@gorhom/bottom-sheet]) with real-time preview
+- 🧭 **Consistent theming** (light/dark “Blueprint Tech” palette) via a custom theme + `react-native-paper`
+- 🧷 **Clipboard** support (long-press conversion chips)
+- ⚡ **Performance**: memoized evaluation, debounced input, batched updates
 - ♿ **A11y**: semantic actions, large text friendly styles
 
 ---
@@ -54,29 +56,29 @@
 
 > Replace the placeholders with your real captures.
 
-| Main | Editor | Conversions |
-|------|--------|-------------|
-| ![Main](assets/screens/main.png) | ![Editor](assets/screens/editor.png) | ![Chips](assets/screens/chips.png) |
+| Main                             | Editor                               | Conversions |
+| -------------------------------- | ------------------------------------ | ----------- |
+| ![Main](assets/screens/main.jpg) | ![Editor](assets/screens/editor.jpg) |
 
 ---
 
 ## Architecture
 
-- **UI**: React Native + Expo + `react-native-paper`  
-- **Editor**: `@gorhom/bottom-sheet` + `react-native-reanimated` + `react-native-gesture-handler`  
-- **State**: Local component state + AsyncStorage for persistence  
-- **Evaluator**: A pure function (`utils/evaluator`) returning structured results `{ value, formatted, unit, conversions, error }`  
+- **UI**: React Native + Expo + `react-native-paper`
+- **Editor**: `@gorhom/bottom-sheet` + `react-native-reanimated` + `react-native-gesture-handler`
+- **State**: Local component state + AsyncStorage for persistence
+- **Evaluator**: A pure function (`utils/evaluator`) returning structured results `{ value, formatted, unit, conversions, error }`
 - **FX/Market data**: `hooks/useMarketData` + `services/marketData` with TTL cache and base-currency conversions
 
 ---
 
 ## Tech stack
 
-- **Expo** (dev client ready), **EAS Build**  
-- **React Native** 0.74+, **TypeScript** 5+  
-- **react-native-paper** (Buttons, Chips, Dialogs, Snackbar)  
-- **@gorhom/bottom-sheet** (bottom sheet editor)  
-- **react-native-reanimated** & **react-native-gesture-handler**  
-- **react-native-safe-area-context**  
-- **@react-native-async-storage/async-storage**  
+- **Expo** (dev client ready), **EAS Build**
+- **React Native** 0.74+, **TypeScript** 5+
+- **react-native-paper** (Buttons, Chips, Dialogs, Snackbar)
+- **@gorhom/bottom-sheet** (bottom sheet editor)
+- **react-native-reanimated** & **react-native-gesture-handler**
+- **react-native-safe-area-context**
+- **@react-native-async-storage/async-storage**
 - **expo-clipboard**
