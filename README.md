@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/light-title.png" alt="CalcCanvas" height="64" />
+  <img src="assets/icon.png" alt="CalcCanvas" height="64" />
 </p>
 
 <p align="center">
