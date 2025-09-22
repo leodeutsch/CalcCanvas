@@ -1,5 +1,7 @@
 // Lightweight text → math transformations and safe helpers
 
+import { getDefaultLocale } from "../locale";
+
 const ALLOWED_FUNS = [
   "round",
   "floor",
@@ -16,16 +18,37 @@ const ALLOWED_FUNS = [
   "tan",
 ] as const;
 
-export const formatNumber = (value: number, fractionDigits = 2) => {
+export const formatNumber = (
+  value: number,
+  fractionDigits = 2,
+  locale?: string
+): string => {
+  if (!Number.isFinite(value)) return String(value);
+
+  const loc = locale ?? getDefaultLocale();
+
+  // Prefer Intl.NumberFormat
   try {
-    return new Intl.NumberFormat("en-US", {
+    return new Intl.NumberFormat(loc, {
       minimumFractionDigits: fractionDigits,
       maximumFractionDigits: fractionDigits,
     }).format(value);
   } catch {
-    return value.toFixed(fractionDigits);
+    // Try toLocaleString as a second chance
+    try {
+      return value.toLocaleString(loc, {
+        minimumFractionDigits: fractionDigits,
+        maximumFractionDigits: fractionDigits,
+      } as any);
+    } catch {
+      // Last resort
+      return value.toFixed(fractionDigits);
+    }
   }
 };
+
+export const clamp = (x: number, a: number, b: number) =>
+  Math.min(Math.max(x, a), b);
 
 // 2k / 3.5M / 1.2B / 7T
 export const applyScaleSuffixes = (input: string): string =>

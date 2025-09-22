@@ -107,10 +107,8 @@ export const useNotes = (marketData: MarketDataState): NotesHook => {
 
   const persistNotes = useCallback(async (updatedNotes: Note[]) => {
     try {
-      await AsyncStorage.setItem(
-        STORAGE_KEYS.notes,
-        JSON.stringify(updatedNotes)
-      );
+      const payload = { version: 1, notes: updatedNotes };
+      await AsyncStorage.setItem(STORAGE_KEYS.notes, JSON.stringify(payload));
     } catch (error) {
       console.error("Error saving notes:", error);
     }
@@ -122,13 +120,25 @@ export const useNotes = (marketData: MarketDataState): NotesHook => {
       const storedPremium = await AsyncStorage.getItem(STORAGE_KEYS.premium);
 
       if (storedNotes) {
-        const parsedNotes: Note[] = JSON.parse(storedNotes).map(
-          (note: Note) => ({
-            ...note,
-            lines: note.lines.map((line) => normalizeLegacyResult(line)),
-            lastModified: note.lastModified ?? new Date().toISOString(),
-          })
-        );
+        let parsedNotesRaw: unknown;
+        try {
+          parsedNotesRaw = JSON.parse(storedNotes);
+        } catch {
+          parsedNotesRaw = null;
+        }
+
+        // aceita {version:1, notes:[...]} ou [...]
+        const rawArray = Array.isArray(parsedNotesRaw)
+          ? parsedNotesRaw
+          : Array.isArray((parsedNotesRaw as any)?.notes)
+          ? (parsedNotesRaw as any).notes
+          : [];
+
+        const parsedNotes: Note[] = rawArray.map((note: Note) => ({
+          ...note,
+          lines: note.lines.map((line) => normalizeLegacyResult(line)),
+          lastModified: note.lastModified ?? new Date().toISOString(),
+        }));
 
         if (parsedNotes.length === 0) {
           const fallbackNote = createInitialNote();
@@ -223,7 +233,7 @@ export const useNotes = (marketData: MarketDataState): NotesHook => {
       startIndex: number,
       baseVars: VarsMap
     ): { nextNote: Note; varsOut: VarsMap } => {
-      const lines = note.lines;
+      const { lines } = note;
       const prevVals: number[] = [];
 
       // 1) Build prevVals for [0 .. startIndex-1] from existing results

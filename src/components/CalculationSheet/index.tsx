@@ -10,7 +10,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { Button, Card, Chip } from "react-native-paper"; // ⬅️ novo
+import { Button, Card, Chip } from "react-native-paper";
 import type { Theme } from "../../styles/theme";
 import type { CalculationLine, Note } from "../../types";
 import { BottomSheetInputEditor } from "../BottomSheetInputEditor";
@@ -27,25 +27,14 @@ interface CalculationSheetProps {
   onEditorOpenChange: (open: boolean) => void;
 }
 
-export const CalculationSheet: React.FC<CalculationSheetProps> = ({
-  theme,
-  note,
-  onChangeLine,
-  onAddLine,
-  onDeleteLine,
-  onEditorOpenChange,
-}) => {
-  const styles = useMemo(() => createStyles(theme), [theme]);
-  const placeholderColor = String(theme.colors.secondaryText);
+const LineRow: React.FC<{
+  theme: Theme;
+  line: CalculationLine;
+  styles: ReturnType<typeof createStyles>;
+  onOpenLine: (line: CalculationLine) => void;
+}> = ({ theme, line, styles, onOpenLine }) => {
+  const pressAnim = React.useRef(new Animated.Value(0)).current;
 
-  const [editingLine, setEditingLine] = useState<CalculationLine | null>(null);
-  const [isNewEditing, setIsNewEditing] = useState(false);
-  const [pendingOpenNew, setPendingOpenNew] = useState(false);
-  const prevLinesCount = useRef<number>(note.lines.length);
-
-  const canAddLine = note.lines.length < MAX_LINES_PER_SHEET;
-
-  const pressAnim = useRef(new Animated.Value(0)).current;
   const handlePressIn = () =>
     Animated.spring(pressAnim, {
       toValue: 1,
@@ -53,6 +42,7 @@ export const CalculationSheet: React.FC<CalculationSheetProps> = ({
       speed: 40,
       bounciness: 0,
     }).start();
+
   const handlePressOut = () =>
     Animated.spring(pressAnim, {
       toValue: 0,
@@ -72,78 +62,166 @@ export const CalculationSheet: React.FC<CalculationSheetProps> = ({
     ],
   };
 
-  const SwipeableRow: React.FC<{
-    onDelete: () => void;
-    children: React.ReactNode;
-  }> = ({ onDelete, children }) => {
-    const translateX = React.useRef(new Animated.Value(0)).current;
-    const [width, setWidth] = useState(0);
+  const hasResult = Boolean(line.result);
 
-    const handleLayout = React.useCallback((e: LayoutChangeEvent) => {
-      setWidth(e.nativeEvent.layout.width);
-    }, []);
+  return (
+    <Card
+      mode="contained"
+      onPress={() => onOpenLine(line)}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      style={styles.card}
+      theme={{ colors: { surface: String(theme.colors.cardBackground) } }}
+    >
+      <Card.Content style={{ padding: 0 }}>
+        <Animated.View style={scaleStyle}>
+          <Text style={styles.input}>
+            {line.input || "Type calculation..."}
+          </Text>
 
-    const panResponder = useMemo(
-      () =>
-        PanResponder.create({
-          onMoveShouldSetPanResponder: (_evt, gesture) => {
-            if (editingLine) return false;
-            const dx = Math.abs(gesture.dx);
-            const dy = Math.abs(gesture.dy);
-            return dx > 6 && dx > dy;
-          },
-          onPanResponderMove: (_evt, gesture) => {
-            if (gesture.dx < 0) translateX.setValue(gesture.dx);
-            else translateX.setValue(gesture.dx * 0.2);
-          },
-          onPanResponderRelease: (_evt, gesture) => {
-            const threshold = Math.max(80, width * 0.25);
-            if (gesture.dx < -threshold || gesture.vx < -1.2) {
-              Animated.timing(translateX, {
-                toValue: -width,
-                duration: 160,
-                useNativeDriver: true,
-              }).start(() => onDelete());
-            } else {
-              Animated.spring(translateX, {
-                toValue: 0,
-                bounciness: 8,
-                useNativeDriver: true,
-              }).start();
-            }
-          },
-          onPanResponderTerminate: () => {
+          {hasResult ? (
+            <>
+              <View style={styles.resultContainer}>
+                <Text style={styles.resultPrimary}>
+                  {line.result?.formatted}
+                </Text>
+                {line.result?.unit ? (
+                  <Text style={styles.resultSecondary}>{line.result.unit}</Text>
+                ) : null}
+              </View>
+
+              {line.result?.conversions?.length ? (
+                <View style={styles.conversionChips}>
+                  {line.result.conversions.map((conversion) => (
+                    <Chip
+                      key={`${line.id}-${conversion.unit}`}
+                      compact
+                      mode="flat"
+                      style={styles.chipPaper}
+                      textStyle={styles.chipTextPaper}
+                    >
+                      {conversion.display}
+                    </Chip>
+                  ))}
+                </View>
+              ) : null}
+            </>
+          ) : null}
+
+          {line.error ? (
+            <Text style={styles.errorText}>{line.error}</Text>
+          ) : null}
+        </Animated.View>
+      </Card.Content>
+    </Card>
+  );
+};
+
+const SwipeableRow: React.FC<{
+  theme: Theme;
+  allowSwipe: boolean;
+  onDelete: () => void;
+  styles: ReturnType<typeof createStyles>;
+  children: React.ReactNode;
+}> = ({ theme, allowSwipe, onDelete, styles, children }) => {
+  const translateX = React.useRef(new Animated.Value(0)).current;
+  const [width, setWidth] = useState(0);
+
+  const handleLayout = React.useCallback((e: LayoutChangeEvent) => {
+    setWidth(e.nativeEvent.layout.width);
+  }, []);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_evt, gesture) => {
+          if (!allowSwipe) return false;
+          const dx = Math.abs(gesture.dx);
+          const dy = Math.abs(gesture.dy);
+          return dx > 6 && dx > dy;
+        },
+        onPanResponderMove: (_evt, gesture) => {
+          if (!allowSwipe) return;
+          if (gesture.dx < 0) translateX.setValue(gesture.dx);
+          else translateX.setValue(gesture.dx * 0.2);
+        },
+        onPanResponderRelease: (_evt, gesture) => {
+          if (!allowSwipe) return;
+          const threshold = Math.max(80, width * 0.25);
+          if (gesture.dx < -threshold || gesture.vx < -1.2) {
+            Animated.timing(translateX, {
+              toValue: -width,
+              duration: 160,
+              useNativeDriver: true,
+            }).start(() => onDelete());
+          } else {
             Animated.spring(translateX, {
               toValue: 0,
               bounciness: 8,
               useNativeDriver: true,
             }).start();
-          },
-        }),
-      [onDelete, translateX, width, editingLine]
-    );
+          }
+        },
+        onPanResponderTerminate: () => {
+          if (!allowSwipe) return;
+          Animated.spring(translateX, {
+            toValue: 0,
+            bounciness: 8,
+            useNativeDriver: true,
+          }).start();
+        },
+      }),
+    [allowSwipe, onDelete, translateX, width]
+  );
 
-    return (
-      <View style={styles.cardWrapper} onLayout={handleLayout}>
-        <View style={styles.deleteBackdrop}>
+  const inset = theme.spacing.xs;
+
+  return (
+    <View style={styles.cardWrapper} onLayout={handleLayout}>
+      {allowSwipe ? (
+        <View
+          style={[
+            styles.deleteBackdrop,
+            {
+              top: inset,
+              bottom: inset,
+              left: inset,
+              right: inset,
+              borderRadius: Math.max(0, Number(theme.radii.lg) - inset),
+            },
+          ]}
+        >
           <Text style={styles.deleteText}>Delete</Text>
         </View>
-        <Animated.View
-          style={{ transform: [{ translateX }] }}
-          {...panResponder.panHandlers}
-        >
-          {children}
-        </Animated.View>
-      </View>
-    );
-  };
+      ) : null}
 
-  const handleInputFocus = (line: CalculationLine) => {
-    if (editingLine) return;
-    setIsNewEditing(false);
-    setEditingLine(line);
-    Keyboard.dismiss();
-  };
+      <Animated.View
+        style={allowSwipe ? { transform: [{ translateX }] } : undefined}
+        {...(allowSwipe ? panResponder.panHandlers : {})}
+      >
+        {children}
+      </Animated.View>
+    </View>
+  );
+};
+
+export const CalculationSheet: React.FC<CalculationSheetProps> = ({
+  theme,
+  note,
+  onChangeLine,
+  onAddLine,
+  onDeleteLine,
+  onEditorOpenChange,
+}) => {
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const placeholderColor = String(theme.colors.secondaryText);
+
+  const [editingLine, setEditingLine] = useState<CalculationLine | null>(null);
+  const [isNewEditing, setIsNewEditing] = useState(false);
+  const [pendingOpenNew, setPendingOpenNew] = useState(false);
+  const prevLinesCount = useRef<number>(note.lines.length);
+
+  const canAddLine = note.lines.length < MAX_LINES_PER_SHEET;
 
   const handleAddAndOpen = () => {
     if (!canAddLine) return;
@@ -186,82 +264,32 @@ export const CalculationSheet: React.FC<CalculationSheetProps> = ({
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         scrollEnabled={!editingLine}
-        onScrollBeginDrag={() => {
-          if (!editingLine) Keyboard.dismiss();
-        }}
-        onTouchStart={() => {
-          if (!editingLine) Keyboard.dismiss();
-        }}
+        onScrollBeginDrag={() => !editingLine && Keyboard.dismiss()}
+        onTouchStart={() => !editingLine && Keyboard.dismiss()}
       >
         {note.lines.map((line) => {
-          const hasResult = Boolean(line.result);
           const allowSwipe = note.lines.length > 1;
 
-          const PaperCard = (
-            <Animated.View style={scaleStyle}>
-              <Card
-                mode="contained"
-                onPress={() => handleInputFocus(line)}
-                onPressIn={handlePressIn}
-                onPressOut={handlePressOut}
-                disabled={!!editingLine}
-                style={styles.card}
-                theme={{
-                  colors: { surface: theme.colors.cardBackground.toString() },
+          return (
+            <SwipeableRow
+              key={line.id}
+              theme={theme}
+              styles={styles}
+              allowSwipe={allowSwipe}
+              onDelete={() => onDeleteLine(line.id)}
+            >
+              <LineRow
+                theme={theme}
+                line={line}
+                styles={styles}
+                onOpenLine={(l) => {
+                  if (editingLine) return;
+                  setIsNewEditing(false);
+                  setEditingLine(l);
+                  Keyboard.dismiss();
                 }}
-              >
-                <Card.Content style={{ padding: 0 }}>
-                  <Text style={styles.input}>
-                    {line.input || "Type calculation..."}
-                  </Text>
-
-                  {hasResult ? (
-                    <>
-                      <View style={styles.resultContainer}>
-                        <Text style={styles.resultPrimary}>
-                          {line.result?.formatted}
-                        </Text>
-                        {line.result?.unit ? (
-                          <Text style={styles.resultSecondary}>
-                            {line.result.unit}
-                          </Text>
-                        ) : null}
-                      </View>
-
-                      {line.result?.conversions?.length ? (
-                        <View style={styles.conversionChips}>
-                          {line.result.conversions.map((conversion) => (
-                            <Chip
-                              key={`${line.id}-${conversion.unit}`}
-                              compact
-                              mode="flat"
-                              style={styles.chipPaper}
-                              textStyle={styles.chipTextPaper}
-                            >
-                              {conversion.display}
-                            </Chip>
-                          ))}
-                        </View>
-                      ) : null}
-                    </>
-                  ) : null}
-
-                  {line.error ? (
-                    <Text style={styles.errorText}>{line.error}</Text>
-                  ) : null}
-                </Card.Content>
-              </Card>
-            </Animated.View>
-          );
-
-          return allowSwipe ? (
-            <SwipeableRow key={line.id} onDelete={() => onDeleteLine(line.id)}>
-              {PaperCard}
+              />
             </SwipeableRow>
-          ) : (
-            <View key={line.id} style={styles.cardWrapper}>
-              {PaperCard}
-            </View>
           );
         })}
 

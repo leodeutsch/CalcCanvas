@@ -24,7 +24,11 @@ export interface CalculationResult {
   unit?: string;
   type: CalculationResultType;
   conversions?: ResultConversion[];
-  metadata?: Record<string, unknown>;
+  metadata?: {
+    precisionApplied?: number;
+    range?: { min: number; max: number; unit?: string };
+    kind?: string;
+  };
 }
 
 export interface CalculationLine {

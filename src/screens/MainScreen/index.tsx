@@ -36,8 +36,8 @@ export const MainScreen: React.FC<MainScreenProps> = ({ theme }) => {
     addNote,
     deleteNote,
     deleteLine,
-    setPremium, // Added
-    downgradeToFree, // Added
+    setPremium,
+    downgradeToFree,
   } = useNotes(marketData);
 
   const [isEditorOpen, setIsEditorOpen] = useState(false);
@@ -121,7 +121,10 @@ export const MainScreen: React.FC<MainScreenProps> = ({ theme }) => {
         {
           label: "Delete",
           variant: "destructive",
-          onPress: () => deleteNote(noteId),
+          onPress: () => {
+            deleteNote(noteId);
+            hidePopup();
+          },
         },
       ]);
     },

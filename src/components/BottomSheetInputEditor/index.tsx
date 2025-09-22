@@ -130,13 +130,20 @@ export const BottomSheetInputEditor: React.FC<BottomSheetInputEditorProps> = ({
   );
 
   const kbd = useAnimatedKeyboard();
+  const KBD_LIFT_OFFSET_ANDROID = 32;
+  const KBD_LIFT_OFFSET_IOS = 56;
   const footerLiftStyle = useAnimatedStyle(() => {
     const h = kbd.height.value;
-
-    const lift = Platform.OS === "ios" ? h : Math.max(0, h - 0);
+    const effective = h > 0 ? h : 0;
+    const mb =
+      Platform.OS === "ios" && effective > 0
+        ? effective - KBD_LIFT_OFFSET_IOS
+        : Platform.OS === "android"
+        ? Math.max(0, effective - KBD_LIFT_OFFSET_ANDROID)
+        : 0;
 
     return {
-      transform: [{ translateY: withTiming(-lift, { duration: 120 }) }],
+      marginBottom: withTiming(mb, { duration: 120 }),
     };
   });
 
@@ -153,7 +160,6 @@ export const BottomSheetInputEditor: React.FC<BottomSheetInputEditorProps> = ({
             footerLiftStyle,
             doneAnimStyle,
           ]}
-          pointerEvents="box-none"
         >
           <Button
             mode="contained"

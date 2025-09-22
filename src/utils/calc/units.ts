@@ -1,4 +1,3 @@
-// utils/calc/units.ts
 // Unit aliases, detection and conversions for mass, length/area/volume/speed, data, css, duration, temperature.
 // Focus: clean detection + canonicalization; conversions remain simple and predictable.
 
@@ -38,6 +37,9 @@ export type LengthPower = 1 | 2 | 3;
 // Speed canonical units (common)
 export type SpeedUnit = "m/s" | "km/h" | "mph" | "kn";
 
+// Angle units
+export type AngleUnit = "deg" | "rad" | "turn";
+
 // ----- Mass -----
 export const MASS_UNITS: readonly MassUnit[] = ["kg", "g", "lb", "oz"] as const;
 export const MASS_FACTORS: Record<MassUnit, number> = {
@@ -47,10 +49,27 @@ export const MASS_FACTORS: Record<MassUnit, number> = {
   oz: 35.2739619,
 };
 
+// Parse strings like "300 g", "1.5 lb" into kilograms (base).
+export const parseMassLike = (s: string): number | null => {
+  const m = String(s)
+    .trim()
+    .toLowerCase()
+    .match(/^(-?\d+(?:\.\d+)?)\s*(kg|g|lb|oz)$/i);
+  if (!m) return null;
+  const v = parseFloat(m[1]);
+  const u = m[2].toLowerCase() as MassUnit;
+  return u === "kg"
+    ? v
+    : u === "g"
+    ? v / 1000
+    : u === "lb"
+    ? v / MASS_FACTORS.lb
+    : v / MASS_FACTORS.oz;
+};
+
 // ----- Temperature -----
 export const tempToK = (v: number, u: TempUnit) =>
   u === "c" ? v + 273.15 : u === "f" ? ((v - 32) * 5) / 9 + 273.15 : v;
-
 export const kToTemp = (k: number, u: TempUnit) =>
   u === "c" ? k - 273.15 : u === "f" ? ((k - 273.15) * 9) / 5 + 32 : k;
 
@@ -155,7 +174,9 @@ const SPEED_ALIASES: Record<string, SpeedUnit> = {
   kn: "kn",
 };
 
-// Detects temperature unit presence in free text
+// ---- DETECTORS (these três que faltavam + outras) ----
+
+// Temperature in free text
 export const determineTempUnit = (input: string): TempUnit | undefined => {
   const lower = input.toLowerCase();
   if (/\b\d+(\.\d+)?\s*°?\s*c\b/.test(lower)) return "c";
@@ -181,15 +202,14 @@ export const hasDurationTokens = (s: string): boolean =>
   /\b(\d+(?:\.\d+)?)\s*(ms|s|sec|min|h|hr|d|day|days)\b/i.test(s);
 
 // Normalize duration terms to seconds arithmetic
-export const normalizeDurationExpression = (s: string): string => {
-  return s.replace(
+export const normalizeDurationExpression = (s: string): string =>
+  s.replace(
     /(\d+(?:\.\d+)?)\s*(ms|s|sec|min|h|hr|d|day|days)\b/gi,
     (_m, num: string, u: string) => {
       const factor = DURATION_TO_SECONDS[u.toLowerCase() as DurationUnit] ?? 1;
       return `((${num})*${factor})`;
     }
   );
-};
 
 // Mass detection (simple)
 export const determineMassUnit = (input: string): MassUnit | undefined => {
@@ -202,7 +222,6 @@ export const determineMassUnit = (input: string): MassUnit | undefined => {
 };
 
 // --- Length/Area/Volume parsing ---
-// Recognizes tokens like "cm", "meters", "m2", "cm^3", "cubic cm", "square meter"
 const AREA_PREFIXES = ["square ", "sq "];
 const VOLUME_PREFIXES = ["cubic ", "cu "];
 
@@ -254,7 +273,6 @@ export const detectLengthLike = (raw: string): LengthDetection => {
 };
 
 // Converts a numeric value expressed in (unit^power) to (target^power).
-// For power=1 it's length, =2 area, =3 volume.
 export const convertLengthPow = (
   value: number,
   unit: LengthUnit,
@@ -262,14 +280,12 @@ export const convertLengthPow = (
   power: LengthPower
 ): number => {
   const toBase = value * Math.pow(LEN_TO_M[unit], power);
-  const out = toBase / Math.pow(LEN_TO_M[target], power);
-  return out;
+  return toBase / Math.pow(LEN_TO_M[target], power);
 };
 
 // Speed detection: km/h, mph, m/s, kn (aliases)
 export const detectSpeedUnit = (raw: string): SpeedUnit | undefined => {
   const s = raw.toLowerCase();
-  // explicit forms
   if (/\bkm\/h\b|\bkph\b/.test(s)) return "km/h";
   if (/\bm\/s\b|\bmps\b/.test(s)) return "m/s";
   if (/\bmph\b/.test(s)) return "mph";
@@ -302,6 +318,20 @@ export const convertSpeed = (
       : ms / 0.514444;
   return fromBase(toBase(value, from), to);
 };
+
+// Angle detection/conversion (deg <-> rad)
+export const detectAngleUnit = (raw: string): AngleUnit | undefined => {
+  const s = raw.toLowerCase();
+  if (/\bdeg(?:rees?)?\b/.test(s)) return "deg";
+  if (/\brad(?:ians?)?\b/.test(s)) return "rad";
+  return undefined;
+};
+export const convertAngle = (value: number, from: AngleUnit, to: AngleUnit) =>
+  from === to
+    ? value
+    : from === "deg"
+    ? (value * Math.PI) / 180
+    : (value * 180) / Math.PI;
 
 // Simple helpers to format results for different unit kinds
 export const fmtUnitVal = (value: number, unit: string, digits = 2) => ({
