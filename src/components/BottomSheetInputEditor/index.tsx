@@ -12,6 +12,7 @@ import React, {
   useState,
 } from "react";
 import {
+  BackHandler,
   Keyboard,
   Platform,
   ScrollView,
@@ -58,6 +59,8 @@ export const BottomSheetInputEditor: React.FC<BottomSheetInputEditorProps> = ({
   const inputRef = useRef<TextInput>(null);
 
   const [value, setValue] = useState(line.input);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
   const marketData = useMarketData();
 
   const debouncedValue = useDebouncedValue(value, 50);
@@ -89,18 +92,27 @@ export const BottomSheetInputEditor: React.FC<BottomSheetInputEditorProps> = ({
     const t = setTimeout(() => {
       sheetRef.current?.expand();
       onOpenChange?.(true);
+      setIsOpen(true);
       inputRef.current?.focus();
       btnAnim.value = withTiming(1, { duration: 160 });
     }, 60);
 
     const hide = Keyboard.addListener(
       Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
-      () => inputRef.current?.blur()
+      () => {
+        setKeyboardVisible(false);
+        inputRef.current?.blur();
+      }
+    );
+    const show = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      () => setKeyboardVisible(true)
     );
 
     return () => {
       clearTimeout(t);
       hide.remove();
+      show.remove();
     };
   }, [onOpenChange, btnAnim]);
 
@@ -113,6 +125,7 @@ export const BottomSheetInputEditor: React.FC<BottomSheetInputEditorProps> = ({
   const handleClose = () => {
     onCancel(line.id, value);
     onOpenChange?.(false);
+    setIsOpen(false);
   };
 
   const renderBackdrop = useCallback(
@@ -182,6 +195,25 @@ export const BottomSheetInputEditor: React.FC<BottomSheetInputEditorProps> = ({
       theme.spacing.lg,
     ]
   );
+
+  // Android back gesture: first dismiss keyboard (if visible), then close sheet
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    const onBackPress = () => {
+      if (keyboardVisible) {
+        Keyboard.dismiss();
+        return true;
+      }
+      if (isOpen) {
+        sheetRef.current?.close();
+        return true;
+      }
+
+      return false;
+    };
+    const sub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+    return () => sub.remove();
+  }, [keyboardVisible, isOpen]);
 
   return (
     <BottomSheet
