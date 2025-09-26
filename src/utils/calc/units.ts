@@ -214,11 +214,10 @@ export const normalizeDurationExpression = (s: string): string =>
 // Mass detection (simple)
 export const determineMassUnit = (input: string): MassUnit | undefined => {
   const lower = input.toLowerCase();
-  if (lower.includes("kg")) return "kg";
-  if (lower.includes(" oz")) return "oz";
-  if (lower.includes(" lb")) return "lb";
-  if (lower.includes(" g") && !lower.includes("kg")) return "g";
-  return undefined;
+  // Match whole tokens only, to avoid matching data units like "gb" as "g".
+  // Examples matched: "1500 g", "2kg", "0.5 lb", "3 oz"
+  const m = lower.match(/\b(kg|g|lb|oz)\b/);
+  return (m?.[1] as MassUnit) || undefined;
 };
 
 // --- Length/Area/Volume parsing ---

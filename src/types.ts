@@ -11,6 +11,9 @@ export type CalculationResultType =
   | "area"
   | "volume"
   | "angle"
+  | "energy"
+  | "power"
+  | "pressure"
   | "duration";
 
 export interface ResultConversion {
@@ -28,6 +31,19 @@ export interface CalculationResult {
     precisionApplied?: number;
     range?: { min: number; max: number; unit?: string };
     kind?: string;
+    deal?: {
+      qty: number;
+      total?: { amount: number; ccy: string };
+      unitPrice?: { amount: number; ccy: string; per?: string };
+      label?: string;
+    };
+    between?: { start?: any; end?: any; ms?: any; from?: any; to?: any };
+    dimensions?: {
+      kindsFound?: string[];
+      composite?: string;
+    };
+    warnings?: string[];
+    normalizedExpression?: string;
   };
 }
 

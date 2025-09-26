@@ -6,9 +6,12 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "test": "jest",
+    "test:watch": "jest --watch"
   },
   "dependencies": {
+    "@formatjs/intl-numberformat": "^8.15.4",
     "@gorhom/bottom-sheet": "^5.2.6",
     "@hugeicons/core-free-icons": "^1.0.17",
     "@hugeicons/react-native": "^1.0.7",
@@ -18,7 +21,7 @@
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
     "decimal.js": "^10.6.0",
-    "expo": "~54.0.9",
+    "expo": "~54.0.10",
     "expo-blur": "~15.0.7",
     "expo-clipboard": "~8.0.7",
     "expo-constants": "~18.0.9",
@@ -27,19 +30,24 @@
     "mathjs": "^14.7.0",
     "react": "19.1.0",
     "react-native": "0.81.4",
+    "react-native-animated-rolling-numbers": "^2.0.0",
     "react-native-gesture-handler": "^2.28.0",
     "react-native-keyboard-aware-scroll-view": "^0.9.5",
     "react-native-paper": "^5.14.5",
-    "react-native-reanimated": "^4.1.0",
+    "react-native-reanimated": "^4.1.2",
     "react-native-safe-area-context": "~5.6.0",
+    "react-native-svg": "15.12.1",
     "react-native-vector-icons": "^10.3.0",
-    "react-native-worklets": "0.5.1",
-    "react-native-svg": "15.12.1"
+    "react-native-worklets": "0.5.1"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "@types/mathjs": "^9.4.1",
     "@types/react": "~19.1.0",
     "babel-preset-expo": "^54.0.2",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.4.4",
+    "ts-node": "^10.9.2",
     "typescript": "~5.9.2"
   },
   "private": true

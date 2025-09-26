@@ -1,5 +1,7 @@
 // Evaluation pipeline with: live variables (incl. mass strings), more units,
-// simple dimensional sanity, NL sugars, range support, precision policy, and a small function whitelist.
+// dimension-aware soft checks, NL sugars (for/each/@/por, ranges & lists),
+// date phrases, locale override (sheet/opcional), guard rails, memo, plugins,
+// precision policy, and a small function whitelist.
 
 import * as math from "mathjs";
 import type { MarketDataState } from "../hooks/useMarketData";
@@ -33,17 +35,61 @@ import {
   MASS_FACTORS,
   MASS_UNITS,
   normalizeDurationExpression,
-  parseMassLike,
   tempToK,
   TempUnit,
 } from "./calc/units";
 
-import { formatNumber } from "./calc/mathSugars";
+import {
+  convertEnergy,
+  convertPower,
+  convertPressure,
+  convertVolumeLiquid,
+  detectEnergyUnit,
+  detectPowerUnit,
+  detectPressureUnit,
+  detectVolumeLiquidUnit,
+  ENERGY_UNITS,
+  energyPrecision,
+  POWER_UNITS,
+  powerPrecision,
+  pressPrecision,
+  PRESSURE_UNITS,
+  volLiqPrecision,
+  VOLUME_LIQUID_UNITS,
+} from "./calc/units_extra";
+
+import { formatNumber, sanitizeForMathWithFns } from "./calc/mathSugars";
+
 import {
   applyNLPSugars,
   detectSimpleRange,
   normalizeFractions,
+  normalizeRangeAndListFns,
 } from "./calc/nlpSugars";
+
+import { normalizeUnitAndCurrencyAliases } from "./calc/aliases";
+import { analyzeDimensions } from "./calc/dimensions";
+import {
+  buildSuggestions,
+  evaluatePartials,
+  findUnknownTokens,
+} from "./calc/recovery";
+
+import {
+  applyDateOperations,
+  evalBetweenExpression,
+  formatDateResult,
+  isBetweenExpression,
+  parseDateExpression,
+  parseDateOperations,
+} from "./datetime";
+
+import { checkExpressionGuards } from "./calc/limits";
+import { makeLRU } from "./calc/memo";
+import { runAfterEvaluate, runBeforeParse } from "./calc/plugins";
+import { parseQuantityLiteral } from "./calc/quantity";
+import { TypedVar } from "./calc/varStore";
+import { getLocaleForEval } from "./locale/policy";
 
 /** ---------- Coins / currency ---------- */
 const COIN_SYMBOLS = ["BTC", "ETH", "SOL", "DOGE"] as const;
@@ -60,9 +106,15 @@ const CURRENCY_SYMBOL_MAP: Record<string, string> = {
   "₿": "BTC",
 };
 
-interface EvaluateResult {
+export interface EvaluateResult {
   result?: CalculationResult;
   error?: string;
+  recovery?: {
+    suggestions: string[];
+    partial: Array<{ expr: string; value: number }>;
+    unknownTokens: string[];
+    normalizedExpression?: string;
+  };
 }
 
 /** Gather supported fiat codes from MarketData (uppercased, 3 letters). */
@@ -82,6 +134,141 @@ const standardizeCurrencySymbols = (input: string): string => {
     updated = updated.replace(regex, ` ${code} `);
   });
   return updated;
+};
+
+/** ---------- Deal semantics (for/each/@/por + infer per-unit) ---------- */
+type DealMeta = {
+  qty: number;
+  label?: string; // "bag", "kg" etc
+  total?: { amount: number; ccy: string }; // ex.: { amount: 400, ccy: "USD" }
+  unitPrice?: { amount: number; ccy: string; per?: string }; // ex.: { amount: 80, ccy: "USD", per: "bag" }
+};
+
+const dealCache = makeLRU<string, { normalized: string; deal?: DealMeta }>(512);
+
+const parseDealSemantics = (
+  input: string
+): { normalized: string; deal?: DealMeta } => {
+  const fromCache = dealCache.get(input);
+  if (fromCache) return fromCache;
+
+  let s = input.trim();
+
+  // 1) "<qty> <label> for <total> <CCC>"
+  const reFor =
+    /\b(\d+(?:\.\d+)?)\s+([a-zá-ú]+(?:\s+[a-zá-ú]+)*)\s+for\s+(\d+(?:\.\d+)?)\s*([A-Za-z]{3})\b/i;
+  const mFor = s.match(reFor);
+  if (mFor) {
+    const qty = parseFloat(mFor[1]);
+    const label = mFor[2].toLowerCase();
+    const totalNum = parseFloat(mFor[3]);
+    const ccy = mFor[4].toUpperCase();
+    const normalized = s.replace(reFor, `${totalNum} ${ccy}`);
+    const unitPrice = qty > 0 ? totalNum / qty : NaN;
+    const out = {
+      normalized,
+      deal: {
+        qty,
+        label,
+        total: { amount: totalNum, ccy: ccy },
+        unitPrice: Number.isFinite(unitPrice)
+          ? {
+              amount: unitPrice,
+              ccy: ccy,
+              per: /kg|g|lb|oz|mm|cm|m|km|in|ft|yd|mi|ml|l/i.test(label)
+                ? label
+                : "each",
+            }
+          : undefined,
+      } as DealMeta,
+    };
+    dealCache.set(input, out);
+    return out;
+  }
+
+  // 2) "<qty> <label> @/por <price> <CCC> [each/cada]"
+  const reAt =
+    /\b(\d+(?:\.\d+)?)\s+([a-zá-ú]+(?:\s+[a-zá-ú]+)*)\s+(?:@|por)\s+(\d+(?:\.\d+)?)\s*([A-Za-z]{3})(?:\s*(?:each|cada))?\b/i;
+  const mAt = s.match(reAt);
+  if (mAt) {
+    const qty = parseFloat(mAt[1]);
+    const label = mAt[2].toLowerCase();
+    const price = parseFloat(mAt[3]);
+    const ccy = mAt[4].toUpperCase();
+    const total = qty * price;
+    const normalized = s.replace(reAt, `${total} ${ccy}`);
+    const out = {
+      normalized,
+      deal: {
+        qty,
+        label,
+        total: { amount: total, ccy: ccy },
+        unitPrice: {
+          amount: price,
+          ccy: ccy,
+          per: /kg|g|lb|oz|mm|cm|m|km|in|ft|yd|mi|ml|l/i.test(label)
+            ? label
+            : "each",
+        },
+      } as DealMeta,
+    };
+    dealCache.set(input, out);
+    return out;
+  }
+
+  // 3) "<qty> <unit> @ <price> <CCC>/<unit>"  ex: "2.5 kg @ 15 BRL/kg"
+  const rePerUnit =
+    /\b(\d+(?:\.\d+)?)\s*(mm|cm|m|km|in|ft|yd|mi|mg|g|kg|lb|oz|ml|l)\s+@?\s*(\d+(?:\.\d+)?)\s*([A-Za-z]{3})\s*\/\s*(\2)\b/i;
+  const mPer = s.match(rePerUnit);
+  if (mPer) {
+    const qty = parseFloat(mPer[1]);
+    const unit = mPer[2].toLowerCase();
+    const price = parseFloat(mPer[3]);
+    const ccy = mPer[4].toUpperCase();
+    const total = qty * price;
+    const normalized = s.replace(rePerUnit, `${total} ${ccy}`);
+    const out = {
+      normalized,
+      deal: {
+        qty,
+        label: unit,
+        total: { amount: total, ccy: ccy },
+        unitPrice: { amount: price, ccy: ccy, per: unit },
+      } as DealMeta,
+    };
+    dealCache.set(input, out);
+    return out;
+  }
+
+  // 4) "<qty><unit> ... for <total> <CCC>" (sem "/unit") ⇒ infer per-unit
+  const reQtyUnitForTotal =
+    /\b(\d+(?:\.\d+)?)(mm|cm|m|km|in|ft|yd|mi|mg|g|kg|lb|oz|ml|l)\b[^=]*?\bfor\s+(\d+(?:\.\d+)?)\s*([A-Za-z]{3})\b/i;
+  const mQut = s.match(reQtyUnitForTotal);
+  if (mQut) {
+    const qty = parseFloat(mQut[1]);
+    const unit = mQut[2].toLowerCase();
+    const totalNum = parseFloat(mQut[3]);
+    const ccy = mQut[4].toUpperCase();
+    const normalized = s.replace(reQtyUnitForTotal, `${totalNum} ${ccy}`);
+    const unitPrice = qty > 0 ? totalNum / qty : NaN;
+    const out = {
+      normalized,
+      deal: {
+        qty,
+        label: unit,
+        total: { amount: totalNum, ccy: ccy },
+        unitPrice: Number.isFinite(unitPrice)
+          ? { amount: unitPrice, ccy: ccy, per: unit }
+          : undefined,
+      } as DealMeta,
+    };
+    dealCache.set(input, out);
+    return out;
+  }
+
+  const out = { normalized: input };
+  dealCache.set(input, out);
+  return out;
 };
 
 /** Multiplication insertion between numbers/closing parens and dynamic tokens. */
@@ -137,53 +324,17 @@ const formatByKind = (
       ? 3
       : 3;
 
-  return {
-    formatted: formatNumber(value, precision),
-    precision,
-  };
+  return { precision };
 };
 
-/** Replace English operator words and keep only allowed function tokens. */
-const sanitizeForMath = (input: string): string => {
-  const allowedFns = ["round", "ceil", "floor", "min", "max"]; // clamp expands to min/max
-  const allow = allowedFns.join("|");
-
-  // Replace basic English connectors with operators
-  let s = input
-    .replace(/\btimes?\b/gi, " * ")
-    .replace(/\bplus\b/gi, " + ")
-    .replace(/\bminus\b/gi, " - ")
-    .replace(/\bdivided?\s*by\b/gi, " / ");
-
-  // Expand clamp(x,a,b) -> min(max(x,a), b)
-  s = s.replace(
-    /\bclamp\s*\(([^,]+),\s*([^,]+),\s*([^)]+)\)/gi,
-    "min(max(($1),($2)),($3))"
-  );
-
-  // Strip any identifiers that are not in the allowed function list
-  // We keep letters only when followed by '(' and they are allowed function names.
-  s = s.replace(/([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g, (m, fn) =>
-    new RegExp(`^(${allow})$`, "i").test(fn) ? m : "("
-  );
-
-  // Remove any stray letters left (units should be replaced earlier)
-  s = s.replace(/[A-Za-z_]+/g, " ");
-
-  // Keep digits, parentheses, commas and + - * / . ^ spaces
-  s = s.replace(/[^0-9+\-*/^()., ]/g, " ");
-
-  // Collapse spaces
-  return s.replace(/\s+/g, " ").trim();
-};
-
-/** Simple dimension sanity for + | - when mixed kinds (heuristic). */
 const hasAddSubtract = (s: string) => /(^|[^*\/])\s[+\-]\s/.test(" " + s + " ");
 
+// ...no topo do evaluator, onde está hoje:
 const buildCurrencyConversions = (
   valueInBase: number,
   baseCurrency: string,
   marketData: MarketDataState,
+  fmtN: (v: number, fd?: number) => string,
   exclude: string[] = [],
   isApprox = false
 ): ResultConversion[] => {
@@ -191,6 +342,7 @@ const buildCurrencyConversions = (
   const currencies = allCodes.filter(
     (code) => code !== baseCurrency.toUpperCase() && !exclude.includes(code)
   );
+
   const out: ResultConversion[] = [];
 
   for (const code of currencies) {
@@ -198,7 +350,7 @@ const buildCurrencyConversions = (
     if (v != null) {
       out.push({
         unit: code,
-        display: `${isApprox ? "~ " : ""}${formatNumber(v, 2)} ${code}`,
+        display: `${isApprox ? "~ " : ""}${fmtN(v, 2)} ${code}`,
       });
     }
   }
@@ -208,27 +360,69 @@ const buildCurrencyConversions = (
     if (amt != null) {
       out.push({
         unit: sym,
-        display: `${formatNumber(amt, amt < 1 ? 6 : 3)} ${sym}`,
+        display: `${fmtN(amt, amt < 1 ? 6 : 3)} ${sym}`,
       });
     }
   }
   return out;
 };
 
-/** Date flow (unchanged, uses your datetime utils) */
-import {
-  applyDateOperations,
-  formatDateResult,
-  isDateExpression,
-  parseDateExpression,
-  parseDateOperations,
-} from "./datetime";
+/** Date flow (expanded) */
+const evaluateDates = (
+  input: string,
+  fmt: (v: number, fd?: number) => string = (v, fd = 2) => formatNumber(v, fd)
+): EvaluateResult | null => {
+  // 1) BETWEEN → duração em segundos, com chips
+  if (isBetweenExpression(input)) {
+    const r = evalBetweenExpression(input);
+    if (r) {
+      const seconds = Math.round(r.ms / 1000);
 
-const evaluateDates = (input: string): EvaluateResult | null => {
+      const toUnit = (sec: number, u: "ms" | "s" | "min" | "h" | "d") =>
+        u === "ms"
+          ? sec * 1000
+          : u === "min"
+          ? sec / 60
+          : u === "h"
+          ? sec / 3600
+          : u === "d"
+          ? sec / 86400
+          : sec;
+
+      const units: Array<"ms" | "s" | "min" | "h" | "d"> = [
+        "ms",
+        "s",
+        "min",
+        "h",
+        "d",
+      ];
+
+      return {
+        result: {
+          value: seconds,
+          formatted: r.formatted, // "X days (Y.y weeks)"
+          unit: "s",
+          type: "duration",
+          conversions: units.map((u) => ({
+            unit: u,
+            display: `${fmt(toUnit(seconds, u), u === "ms" ? 0 : 3)} ${u}`,
+          })),
+          metadata: {
+            kind: "duration",
+            between: { from: r.aISO, to: r.bISO, ms: r.ms },
+          },
+        },
+      };
+    }
+  }
+
+  // 2) Datas pontuais (today/now/next monday/workdays(...))
   const parsed = parseDateExpression(input);
   if (!parsed) return null;
+
   const operations = parseDateOperations(input);
   const resultDate = applyDateOperations(parsed.date, operations);
+
   return {
     result: {
       value: resultDate.getTime(),
@@ -238,8 +432,8 @@ const evaluateDates = (input: string): EvaluateResult | null => {
   };
 };
 
-/** Scale suffixes like 2k, 3m */
-const applyScaleSuffixes = (input: string): string =>
+/** Local helpers (duplicados aqui para não alterar outros módulos) */
+const applyScaleSuffixesLocal = (input: string): string =>
   input.replace(
     /\b(\d+(?:\.\d+)?)([kKmMbBtT])\b/g,
     (_m, n: string, suf: string) => {
@@ -256,13 +450,13 @@ const applyScaleSuffixes = (input: string): string =>
     }
   );
 
-const normalizeRadixLiterals = (s: string): string =>
+const normalizeRadixLiteralsLocal = (s: string): string =>
   s
     .replace(/\b0x[0-9a-fA-F]+\b/g, (m) => String(parseInt(m, 16)))
     .replace(/\b0o[0-7]+\b/g, (m) => String(parseInt(m, 8)))
     .replace(/\b0b[01]+\b/g, (m) => String(parseInt(m, 2)));
 
-const applyPercentPhrases = (s: string): string => {
+const applyPercentPhrasesLocal = (s: string): string => {
   let out = s;
   out = out.replace(
     /(\d+(?:\.\d+)?)\s*%?\s*of\s*\(([^)]+)\)/gi,
@@ -298,10 +492,10 @@ type InClause = {
   targetTemp?: TempUnit;
   targetData?: DataUnit;
   targetCss?: CssUnit;
-  targetLength?: string; // canonical length unit
+  targetLength?: string;
   targetSpeed?: string;
   targetAngle?: AngleUnit;
-  targetDuration?: string; // "s", "min", "h"...
+  targetDuration?: string;
 };
 
 const parseInClause = (input: string): InClause => {
@@ -320,7 +514,6 @@ const parseInClause = (input: string): InClause => {
     out.targetData = u as DataUnit;
   if (["px", "pt", "em"].includes(u)) out.targetCss = u as CssUnit;
 
-  // length/speed/angle/duration (we keep as raw; evaluator maps after detection)
   if (/\b(mm|cm|m|km|in|ft|yd|mi)(\^?[23])?\b/.test(u)) out.targetLength = u;
   if (/\b(m\/s|km\/h|kph|mph|kn)\b/.test(u)) out.targetSpeed = u;
   if (/\b(deg|rad|turn|degrees|radians|turns)\b/.test(u))
@@ -336,10 +529,13 @@ const ensureImplicitAroundParens = (s: string): string =>
     .replace(/(\d)\s*\(/g, "$1*(")
     .replace(/\)\s*(\d)/g, ")*$1");
 
+const ensureImplicitBetweenNumbers = (s: string): string =>
+  s.replace(/(\d(?:\.\d+)?)(\s+)(?=\d)/g, (_m, n: string) => `${n} * `);
+
 /** Context variables support */
 export type EvalContext = {
   previousValues: number[];
-  variables?: Record<string, number | string>;
+  variables?: Record<string, number | string> | any;
 };
 
 const singularize = (id: string) => {
@@ -374,28 +570,39 @@ const applyContextTokens = (input: string, ctx?: EvalContext): string => {
   return s;
 };
 
-const applyBarePercent = (input: string): string =>
+const applyBarePercentLocal = (input: string): string =>
   input.replace(/(\d+(?:\.\d+)?)\s*%/g, (_m, n) => `((${n})/100)`);
 
+// Substitui variáveis do contexto por números (suporta string "300 g" → kg)
 const applyVariables = (
   input: string,
-  vars?: Record<string, number | string>
+  vars?: Record<string, number | string | TypedVar>
 ): string => {
   if (!vars) return input;
   let s = input;
 
   for (const [rawName, rawValue] of Object.entries(vars)) {
     const nameLower = rawName.toLowerCase();
-    if (/^(in|to|of|on|off|sum|avg|prev)$/i.test(nameLower)) continue;
-    if (/^[A-Z]{3}$/.test(nameLower)) continue;
 
-    /** allow string variables with simple mass literal (e.g., "300 g") */
+    if (/^(in|to|of|on|off|sum|avg|prev)$/i.test(nameLower)) continue;
+    if (/^[A-Z]{3}$/.test(rawName)) continue;
+
     let replaceValue: number | null = null;
-    if (typeof rawValue === "number") replaceValue = rawValue;
-    else {
-      const massKg = parseMassLike(rawValue);
-      if (massKg != null) replaceValue = massKg;
+
+    if (typeof rawValue === "number") {
+      replaceValue = rawValue;
+    } else if (typeof rawValue === "string") {
+      const q = parseQuantityLiteral(rawValue);
+      if (q) replaceValue = q.valueSI;
+      else {
+        const asNum = Number(rawValue.replace(/\s+/g, ""));
+        if (Number.isFinite(asNum)) replaceValue = asNum;
+      }
+    } else if (rawValue && typeof rawValue === "object") {
+      const tv = rawValue as TypedVar;
+      if (Number.isFinite(tv.valueSI)) replaceValue = tv.valueSI;
     }
+
     if (replaceValue == null) continue;
 
     const base = singularize(nameLower).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -403,8 +610,10 @@ const applyVariables = (
       `\\b(${base}|${base}s|${base}es|${base.replace(/y$/, "ies")})\\b`,
       "gi"
     );
+
     s = s.replace(re, String(replaceValue));
   }
+
   return s;
 };
 
@@ -443,44 +652,153 @@ const resolveDynamicTokens = (
   return updated;
 };
 
+const parseLooseNumber = (s: string): number | null => {
+  const hasComma = s.includes(",");
+  const hasDot = s.includes(".");
+  if (hasComma && hasDot) {
+    // Ex.: "1,234.56" → vírgula = milhar, ponto = decimal
+    const cleaned = s.replace(/,/g, "");
+    const n = parseFloat(cleaned);
+    return Number.isFinite(n) ? n : null;
+  }
+  if (hasComma && !hasDot) {
+    // Ex.: "1.234,56" (ou "40,06") → vírgula = decimal
+    const cleaned = s.replace(/\./g, "").replace(",", ".");
+    const n = parseFloat(cleaned);
+    return Number.isFinite(n) ? n : null;
+  }
+  // Só ponto ou só dígitos
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : null;
+};
+
 // ---------- Main evaluate ----------
 export const evaluateInput = (
   rawInput: string,
   marketData: MarketDataState,
-  ctx?: EvalContext
+  ctx?: EvalContext,
+  options?: {
+    locale?: string;
+    sheetId?: string;
+    features?: {
+      allowRand?: boolean;
+      seed?: number;
+      strictDimensions?: boolean;
+    };
+  }
 ): EvaluateResult => {
   const input = rawInput ?? "";
   if (!input.trim()) return {};
 
-  // Dates first
-  if (isDateExpression(input)) {
-    const dateResult = evaluateDates(input);
-    if (dateResult) return dateResult;
+  // Locale resolvido (device/sheet/override)
+  const { localeTag } = getLocaleForEval({
+    locale: options?.locale,
+    sheetId: options?.sheetId,
+  });
+  const fmtN = (v: number, fd = 2) => formatNumber(v, fd, localeTag);
+
+  // Dates first (including 'between')
+  const dateTry = evaluateDates(input, fmtN);
+  if (dateTry) {
+    if (dateTry.result?.conversions) {
+      dateTry.result.conversions = dateTry.result.conversions.map((c) => {
+        const m = c.display.match(/(-?\d+(?:[.,]\d+)?)/);
+        if (!m) return c;
+        const num = parseFloat(m[1].replace(/\./g, "").replace(",", "."));
+        const rest = c.display.slice((m.index ?? 0) + m[0].length);
+        return { ...c, display: `${fmtN(num, 3)}${rest}` };
+      });
+    }
+    return dateTry;
   }
 
+  // Dimensional analysis of the ORIGINAL expression (for warnings/composite)
+  const dimInfo = analyzeDimensions(input);
+
+  if (options?.features?.strictDimensions && dimInfo.addSubConflicts?.length) {
+    return {
+      error: "Incompatible units for addition/subtraction.",
+      recovery: {
+        suggestions: dimInfo.addSubConflicts
+          .slice(0, 2)
+          .map(
+            (p) =>
+              `Converta para a mesma dimensão antes de somar: "${p.left}" e "${p.right}".`
+          ),
+        partial: [],
+        unknownTokens: [],
+        normalizedExpression: undefined,
+      },
+    };
+  }
+
+  const makeLCG = (seed: number) => {
+    let s = seed >>> 0 || 123456789;
+    return () => {
+      s = (1664525 * s + 1013904223) >>> 0;
+      return s / 0xffffffff;
+    };
+  };
+
+  const applyRandSugar = (
+    text: string,
+    allow: boolean,
+    seed?: number
+  ): string => {
+    if (!allow) return text;
+    const rnd = makeLCG(seed ?? 42);
+    let out = text.replace(
+      /\brand\s*\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)/gi,
+      (_m, a: string, b: string) => {
+        const lo = parseFloat(a),
+          hi = parseFloat(b);
+        const x = rnd();
+        return String(lo + x * (hi - lo));
+      }
+    );
+    out = out.replace(/\brand\s*\(\s*\)/gi, () => String(rnd()));
+    return out;
+  };
+
   // Pre-normalization pipeline
-  const withFractions = normalizeFractions(input);
+  const randApplied = applyRandSugar(
+    input,
+    !!options?.features?.allowRand,
+    options?.features?.seed
+  );
+  const withFractions = normalizeFractions(randApplied);
+
   const withNL = applyNLPSugars(withFractions);
-  const withRadix = normalizeRadixLiterals(withNL);
-  const withScales = applyScaleSuffixes(withRadix);
+  const withRangeList = normalizeRangeAndListFns(withNL);
+  const withRadix = normalizeRadixLiteralsLocal(withRangeList);
+  const withScales = applyScaleSuffixesLocal(withRadix);
   const withConstants = withScales
     .replace(/\bpi\b/gi, String(Math.PI))
     .replace(/\be\b/gi, String(Math.E));
   const withNumSeps = withConstants
     .replace(/(\d)[_,](?=\d)/g, "$1")
     .replace(/(\d),(?=\d{3}\b)/g, "$1");
-  const withPercentSemantics = applyPercentPhrases(withNumSeps);
+  const withPercentSemantics = applyPercentPhrasesLocal(withNumSeps);
 
-  // Durations inline normalization (turn "2h 30m" arithmetic into seconds)
+  // Durations inline normalization
   const withDurations = hasDurationTokens(withPercentSemantics)
     ? normalizeDurationExpression(withPercentSemantics)
     : withPercentSemantics;
 
   const inInfo = parseInClause(withDurations);
   const standardized = standardizeCurrencySymbols(inInfo.expression);
+  const aliased = normalizeUnitAndCurrencyAliases(standardized);
 
-  // Trailing "= USD?" still supported
-  const queryMatch = standardized.match(/=\s*([a-z]{3})\??$/i);
+  // Plugins (before-parse)
+  const beforeApplied = runBeforeParse(aliased);
+
+  // Deal semantics
+  const dealParsed = parseDealSemantics(beforeApplied);
+  const withDeals = dealParsed.normalized;
+  const dealMeta = dealParsed.deal;
+
+  // "= USD?" trailing
+  const queryMatch = withDeals.match(/=\s*([a-z]{3})\??$/i);
   const targetCurrencyQuery = queryMatch
     ? queryMatch[1].toUpperCase()
     : undefined;
@@ -489,13 +807,13 @@ export const evaluateInput = (
   )?.toUpperCase();
 
   const expressionSource = queryMatch
-    ? standardized.replace(/=\s*([a-z]{3})\??$/i, "").trim()
-    : standardized;
+    ? withDeals.replace(/=\s*([a-z]{3})\??$/i, "").trim()
+    : withDeals;
 
   // Vars / context / bare %
   const withVars = applyVariables(expressionSource, ctx?.variables);
   const withContextTokens = applyContextTokens(withVars, ctx);
-  const withBarePercent = applyBarePercent(withContextTokens);
+  const withBarePercent = applyBarePercentLocal(withContextTokens);
 
   // Heuristics for dimension/kind detection
   const massUnitFromText = determineMassUnit(withBarePercent);
@@ -506,6 +824,11 @@ export const evaluateInput = (
   const speedUnit = detectSpeedUnit(withBarePercent);
   const angleUnit = detectAngleUnit(withBarePercent);
 
+  const volLiquidUnit = detectVolumeLiquidUnit(withBarePercent);
+  const energyUnit = detectEnergyUnit(withBarePercent);
+  const powerUnit = detectPowerUnit(withBarePercent);
+  const pressureUnit = detectPressureUnit(withBarePercent);
+
   // Dynamic tokens (fx/crypto)
   const usedCurrencies = new Set<string>();
   let withDynamicTokens = resolveDynamicTokens(
@@ -514,27 +837,71 @@ export const evaluateInput = (
     usedCurrencies
   );
 
-  // Explicit mult around parens and functions
-  const withParensMult = ensureImplicitAroundParens(withDynamicTokens);
-  const mathExpression = sanitizeForMath(withParensMult);
-  if (!mathExpression) return {};
+  // Explicit mult and sanitize
+  const withNumsMult = ensureImplicitBetweenNumbers(withDynamicTokens);
+  const withParensMult = ensureImplicitAroundParens(withNumsMult);
+  const mathExpression = sanitizeForMathWithFns(withParensMult);
 
-  // Simple incompatible +/− check (mass vs length/area/volume)
+  // Guard rails
+  const guardErr = checkExpressionGuards(withParensMult);
+  if (guardErr) {
+    return {
+      error: guardErr,
+      recovery: {
+        suggestions: [
+          "Tente reduzir o tamanho da expressão ou dividir em etapas.",
+        ],
+        partial: [],
+        unknownTokens: [],
+        normalizedExpression:
+          withParensMult.slice(0, 2000) +
+          (withParensMult.length > 2000 ? " …" : ""),
+      },
+    };
+  }
+
+  if (!mathExpression) {
+    const suggestions = buildSuggestions(input);
+    const unknown = findUnknownTokens(withParensMult);
+    return {
+      error: "Invalid calculation",
+      recovery: {
+        suggestions,
+        unknownTokens: unknown,
+        normalizedExpression: withParensMult.trim() || undefined,
+        partial: [],
+      },
+    };
+  }
+
+  // Simple incompatible +/− check (mass vs length)
   if (hasAddSubtract(mathExpression) && massUnitFromText && lengthLike) {
     return { error: "Incompatible units for addition/subtraction." };
   }
 
-  // Evaluate with mathjs (whitelisted)
+  // Evaluate
   let rawResult: number;
   try {
     rawResult = math.evaluate(mathExpression);
     if (typeof rawResult !== "number" || !Number.isFinite(rawResult)) {
-      return { error: "Invalid calculation" };
+      throw new Error("NaN");
     }
   } catch {
-    return { error: "Invalid calculation" };
+    const suggestions = buildSuggestions(input);
+    const unknown = findUnknownTokens(withParensMult);
+    const partial = evaluatePartials(withParensMult, (s) => math.evaluate(s));
+    return {
+      error: "Invalid calculation",
+      recovery: {
+        suggestions,
+        unknownTokens: unknown,
+        normalizedExpression: withParensMult.trim(),
+        partial,
+      },
+    };
   }
 
+  // ---------- Build result by detected kind ----------
   let result: CalculationResult;
   let type: CalculationResultType = "number";
 
@@ -544,20 +911,19 @@ export const evaluateInput = (
     const initial = (massUnitFromText ?? "kg") as (typeof MASS_UNITS)[number];
     const final = (inInfo.targetMass ?? initial) as (typeof MASS_UNITS)[number];
 
-    // convert rawResult interpreted as 'initial' to 'final'
     const kg = rawResult / (MASS_FACTORS[initial] ?? 1);
     const out = kg * (MASS_FACTORS[final] ?? 1);
 
-    const { formatted, precision } = formatByKind(type, out, final);
+    const { precision } = formatByKind(type, out, final);
     result = {
       value: out,
-      formatted,
+      formatted: fmtN(out, precision),
       unit: final,
       type,
       conversions: MASS_UNITS.filter((u) => u !== final).map((u) => {
         const v = kg * (MASS_FACTORS[u] ?? 1);
         const p = u === "g" || u === "oz" ? 1 : 2;
-        return { unit: u, display: `${formatNumber(v, p)} ${u}` };
+        return { unit: u, display: `${fmtN(v, p)} ${u}` };
       }),
       metadata: { precisionApplied: precision, kind: "mass" },
     };
@@ -569,14 +935,10 @@ export const evaluateInput = (
     const final = (inInfo.targetTemp ?? initial) as TempUnit;
     const k = tempToK(rawResult, initial);
     const out = kToTemp(k, final);
-    const { formatted, precision } = formatByKind(
-      type,
-      out,
-      final.toUpperCase()
-    );
+    const { precision } = formatByKind(type, out, final.toUpperCase());
     result = {
       value: out,
-      formatted,
+      formatted: fmtN(out, precision),
       unit: final.toUpperCase(),
       type,
       conversions: (["c", "f", "k"] as TempUnit[])
@@ -585,7 +947,7 @@ export const evaluateInput = (
           const v = kToTemp(k, t);
           return {
             unit: t.toUpperCase(),
-            display: `${formatNumber(v, 2)} ${t.toUpperCase()}`,
+            display: `${fmtN(v, 2)} ${t.toUpperCase()}`,
           };
         }),
       metadata: { precisionApplied: precision, kind: "temperature" },
@@ -606,14 +968,10 @@ export const evaluateInput = (
         : bits / (DATA_FACTORS_BIN as any)[u];
     const bits = toBits(rawResult, initial);
     const out = fromBits(bits, final);
-    const { formatted, precision } = formatByKind(
-      type,
-      out,
-      final.toUpperCase()
-    );
+    const { precision } = formatByKind(type, out, final.toUpperCase());
     result = {
       value: out,
-      formatted,
+      formatted: fmtN(out, precision),
       unit: final.toUpperCase(),
       type,
       conversions: (
@@ -625,7 +983,7 @@ export const evaluateInput = (
           const prec = t === "b" ? 0 : v < 10 ? 3 : 2;
           return {
             unit: t.toUpperCase(),
-            display: `${formatNumber(v, prec)} ${t.toUpperCase()}`,
+            display: `${fmtN(v, prec)} ${t.toUpperCase()}`,
           };
         }),
       metadata: { precisionApplied: precision, kind: "data" },
@@ -649,39 +1007,38 @@ export const evaluateInput = (
         ? px / (CSS_DEFAULTS.ppi / 72)
         : px / CSS_DEFAULTS.emPx;
     const out = fromPx(toPx(rawResult, initial), final);
-    const { formatted, precision } = formatByKind(type, out, final);
+    const { precision } = formatByKind(type, out, final);
+    const cssUnits: CssUnit[] = ["px", "pt", "em"];
     result = {
       value: out,
-      formatted,
+      formatted: fmtN(out, precision),
       unit: final,
       type,
-      conversions: (["px", "pt", "em"] as CssUnit[])
-        .filter((t) => t !== final)
-        .map((t) => {
-          const v = fromPx(toPx(rawResult, initial), t);
-          const prec = t === "px" ? 0 : 2;
-          return { unit: t, display: `${formatNumber(v, prec)} ${t}` };
+      conversions: cssUnits
+        .filter((unit) => unit !== final)
+        .map((unit) => {
+          const v = fromPx(toPx(rawResult, initial), unit);
+          const p = unit === "px" ? 0 : 2;
+          return { unit, display: `${fmtN(v, p)} ${unit}` };
         }),
       metadata: { precisionApplied: precision, kind: "css" },
     };
 
-    // LENGTH / AREA / VOLUME
+    // LENGTH / AREA / VOLUME (geométrico)
   } else if (lengthLike || inInfo.targetLength) {
     const det =
       lengthLike ??
       ({ kind: "length", unit: "m", power: 1 } as LengthDetection);
-    if (!det) return { error: "Invalid length expression" };
-    type = det.kind as CalculationResultType;
+    type = det!.kind as CalculationResultType;
 
-    // parse target (if present)
-    let targetUnit = det.unit;
+    let targetUnit = det!.unit;
     if (inInfo.targetLength) {
       const m = inInfo.targetLength.match(/\b(mm|cm|m|km|in|ft|yd|mi)\b/);
       if (m) targetUnit = m[1] as any;
     }
 
-    const out = convertLengthPow(rawResult, det.unit, targetUnit, det.power);
-    const { formatted, precision } = formatByKind(type, out, targetUnit);
+    const out = convertLengthPow(rawResult, det!.unit, targetUnit, det!.power);
+    const { precision } = formatByKind(type, out, targetUnit);
     const conversionsUnits: any[] = [
       "mm",
       "cm",
@@ -694,22 +1051,23 @@ export const evaluateInput = (
     ];
     result = {
       value: out,
-      formatted,
+      formatted: fmtN(out, precision),
       unit: targetUnit,
       type,
       conversions: conversionsUnits
         .filter((u) => u !== targetUnit)
         .map((u) => {
-          const v = convertLengthPow(rawResult, det.unit, u as any, det.power);
-          const p = det.power === 1 ? 3 : 6;
-          return {
-            unit: u + (det.power === 1 ? "" : det.power === 2 ? "²" : "³"),
-            display: `${formatNumber(v, p)} ${u}${
-              det.power === 1 ? "" : det.power === 2 ? "²" : "³"
-            }`,
-          };
+          const v = convertLengthPow(
+            rawResult,
+            det!.unit,
+            u as any,
+            det!.power
+          );
+          const p = det!.power === 1 ? 3 : 6;
+          const sup = det!.power === 1 ? "" : det!.power === 2 ? "²" : "³";
+          return { unit: u + sup, display: `${fmtN(v, p)} ${u}${sup}` };
         }),
-      metadata: { precisionApplied: precision, kind: det.kind },
+      metadata: { precisionApplied: precision, kind: det!.kind },
     };
 
     // SPEED
@@ -721,18 +1079,18 @@ export const evaluateInput = (
       final = /kph/i.test(inInfo.targetSpeed) ? "km/h" : inInfo.targetSpeed;
     }
     const out = convertSpeed(rawResult, initial, final);
-    const { formatted, precision } = formatByKind(type, out, final);
+    const { precision } = formatByKind(type, out, final);
     const units: any[] = ["m/s", "km/h", "mph", "kn"];
     result = {
       value: out,
-      formatted,
+      formatted: fmtN(out, precision),
       unit: final,
       type,
       conversions: units
         .filter((u) => u !== final)
         .map((u) => ({
           unit: u,
-          display: `${formatNumber(convertSpeed(out, final, u), 2)} ${u}`,
+          display: `${fmtN(convertSpeed(out, final, u), 2)} ${u}`,
         })),
       metadata: { precisionApplied: precision, kind: "speed" },
     };
@@ -743,18 +1101,18 @@ export const evaluateInput = (
     const initial = (angleUnit ?? "deg") as AngleUnit;
     const final = (inInfo.targetAngle ?? initial) as AngleUnit;
     const out = convertAngle(rawResult, initial, final);
-    const { formatted, precision } = formatByKind(type, out, final);
+    const { precision } = formatByKind(type, out, final);
     const units: AngleUnit[] = ["deg", "rad", "turn"];
     result = {
       value: out,
-      formatted,
+      formatted: fmtN(out, precision),
       unit: final,
       type,
       conversions: units
         .filter((u) => u !== final)
         .map((u) => ({
           unit: u,
-          display: `${formatNumber(convertAngle(out, final, u), 3)} ${u}`,
+          display: `${fmtN(convertAngle(out, final, u), 3)} ${u}`,
         })),
       metadata: { precisionApplied: precision, kind: "angle" },
     };
@@ -765,6 +1123,7 @@ export const evaluateInput = (
     const isFxApprox =
       !marketData.lastUpdated ||
       Date.now() - marketData.lastUpdated > EXCHANGE_CACHE_TTL;
+
     const desired =
       targetCurrency &&
       marketData.convertFromBase(rawResult, targetCurrency) != null
@@ -776,26 +1135,28 @@ export const evaluateInput = (
         ? rawResult
         : marketData.convertFromBase(rawResult, desired) ?? rawResult;
 
-    const { formatted, precision } = formatByKind(type, desiredValue, desired);
+    const { precision } = formatByKind(type, desiredValue, desired);
     result = {
       value: desiredValue,
-      formatted,
+      formatted: fmtN(desiredValue, precision),
       unit: desired,
       type,
+      // >>> passa fmtN aqui e NÃO faça mais o map com regex depois <<<
       conversions: buildCurrencyConversions(
         rawResult,
         marketData.baseCurrency,
         marketData,
+        fmtN,
         desired ? [desired] : [],
         isFxApprox
       ),
       metadata: { precisionApplied: precision, kind: "currency" },
     };
 
-    // DURATION (as seconds base; only if tokens present)
+    // DURATION (as seconds base)
   } else if (hasDurationTokens(withBarePercent) || inInfo.targetDuration) {
     type = "duration";
-    const seconds = rawResult; // already normalized to seconds
+    const seconds = rawResult;
     const final = inInfo.targetDuration?.toLowerCase() ?? "s";
     const toUnit = (sec: number, u: string) =>
       u === "ms"
@@ -809,34 +1170,105 @@ export const evaluateInput = (
         : sec;
 
     const out = toUnit(seconds, final);
-    const { formatted, precision } = formatByKind(type, out, final);
+    const { precision } = formatByKind(type, out, final);
     const targets = ["ms", "s", "min", "h", "d"];
     result = {
       value: out,
-      formatted,
+      formatted: fmtN(out, precision),
       unit: final,
       type,
       conversions: targets
         .filter((u) => u !== final)
         .map((u) => ({
           unit: u,
-          display: `${formatNumber(toUnit(seconds, u), 3)} ${u}`,
+          display: `${fmtN(toUnit(seconds, u), 3)} ${u}`,
         })),
       metadata: { precisionApplied: precision, kind: "duration" },
+    };
+  } else if (
+    volLiquidUnit ||
+    (inInfo.targetLength && /\b(mL|l|L|gal)\b/.test(inInfo.targetLength))
+  ) {
+    const initial = (volLiquidUnit ?? "L") as any;
+    let final = initial;
+    if (inInfo.targetLength) {
+      const m = inInfo.targetLength.match(/\b(mL|l|L|gal)\b/);
+      if (m) final = m[1] === "l" ? "L" : (m[1] as any);
+    }
+    const out = convertVolumeLiquid(rawResult, initial, final);
+    const precision = volLiqPrecision(final, out);
+    result = {
+      value: out,
+      formatted: fmtN(out, precision),
+      unit: final,
+      type: "volume",
+      conversions: VOLUME_LIQUID_UNITS.filter((u) => u !== final).map((u) => {
+        const v = convertVolumeLiquid(rawResult, initial, u);
+        return { unit: u, display: `${fmtN(v, volLiqPrecision(u, v))} ${u}` };
+      }),
+      metadata: { precisionApplied: precision, kind: "volume" },
+    };
+  } else if (energyUnit) {
+    const initial = energyUnit;
+    const final = initial;
+    const out = rawResult;
+    const precision = energyPrecision(final, out);
+    result = {
+      value: out,
+      formatted: fmtN(out, precision),
+      unit: final,
+      type: "energy",
+      conversions: ENERGY_UNITS.filter((u) => u !== final).map((u) => {
+        const v = convertEnergy(out, final, u);
+        return { unit: u, display: `${fmtN(v, energyPrecision(u, v))} ${u}` };
+      }),
+      metadata: { precisionApplied: precision, kind: "energy" },
+    };
+  } else if (powerUnit) {
+    const initial = powerUnit;
+    const final = initial;
+    const out = rawResult;
+    const precision = powerPrecision(final, out);
+    result = {
+      value: out,
+      formatted: fmtN(out, precision),
+      unit: final,
+      type: "power",
+      conversions: POWER_UNITS.filter((u) => u !== final).map((u) => {
+        const v = convertPower(out, final, u);
+        return { unit: u, display: `${fmtN(v, powerPrecision(u, v))} ${u}` };
+      }),
+      metadata: { precisionApplied: precision, kind: "power" },
+    };
+  } else if (pressureUnit) {
+    const initial = pressureUnit;
+    const final = initial;
+    const out = rawResult;
+    const precision = pressPrecision(final, out);
+    result = {
+      value: out,
+      formatted: fmtN(out, precision),
+      unit: final,
+      type: "pressure",
+      conversions: PRESSURE_UNITS.filter((u) => u !== final).map((u) => {
+        const v = convertPressure(out, final, u);
+        return { unit: u, display: `${fmtN(v, pressPrecision(u, v))} ${u}` };
+      }),
+      metadata: { precisionApplied: precision, kind: "pressure" },
     };
 
     // PLAIN NUMBER
   } else {
-    const { formatted, precision } = formatByKind("number", rawResult);
+    const { precision } = formatByKind("number", rawResult);
     result = {
       value: rawResult,
-      formatted,
+      formatted: fmtN(rawResult, precision),
       type: "number",
       metadata: { precisionApplied: precision, kind: "dimensionless" },
     };
   }
 
-  // Optional: range detection (metadata only; UI unchanged)
+  // Optional: range detection (metadata only)
   const range = detectSimpleRange(input);
   if (range && result) {
     result.metadata = {
@@ -847,6 +1279,64 @@ export const evaluateInput = (
         unit: range.unit ?? result.unit,
       },
     };
+  }
+
+  // Inject dimension warnings/composite/normalized (soft)
+  if (result) {
+    const warnings: string[] = [];
+    const dimInfo = analyzeDimensions(input);
+    if (dimInfo.addSubConflicts?.length) {
+      warnings.push(
+        ...dimInfo.addSubConflicts.map(
+          (p) =>
+            `Soma/subtração entre "${p.left}" e "${p.right}" pode ser incompatível.`
+        )
+      );
+    }
+    result.metadata = {
+      ...(result.metadata || {}),
+      dimensions: {
+        kindsFound: Array.from(dimInfo.kindsFound),
+        composite: dimInfo.composite,
+      },
+      warnings: warnings.length ? warnings : undefined,
+      normalizedExpression: mathExpression,
+    };
+  }
+
+  // Inject deal chips (e, opcionalmente, metadata.deal)
+  if (result && dealMeta) {
+    const conversions = result.conversions ? [...result.conversions] : [];
+    const fmtMoney = (v: number, unit: string) => `${fmtN(v, 2)} ${unit}`;
+
+    if (dealMeta.total) {
+      conversions.unshift({
+        unit: dealMeta.total.ccy,
+        display: `${fmtMoney(dealMeta.total.amount, dealMeta.total.ccy)} total`,
+      });
+    }
+    if (dealMeta.unitPrice) {
+      const per = dealMeta.unitPrice.per ?? (dealMeta.label || "each");
+      conversions.unshift({
+        unit: `${dealMeta.unitPrice.ccy}/${per}`,
+        display: `${fmtMoney(
+          dealMeta.unitPrice.amount,
+          dealMeta.unitPrice.ccy
+        )} / ${per}`,
+      });
+    }
+    result.conversions = conversions;
+    result.metadata = { ...(result.metadata || {}), deal: dealMeta };
+  }
+
+  // Plugins (after-evaluate)
+  if (result) {
+    runAfterEvaluate({
+      input,
+      normalizedExpression: mathExpression,
+      value: result.value,
+      result,
+    });
   }
 
   return { result };

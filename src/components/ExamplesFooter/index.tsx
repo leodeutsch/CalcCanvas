@@ -8,7 +8,8 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Animated, Easing, LayoutChangeEvent, Text, View } from "react-native";
+import { Animated, LayoutChangeEvent, Text, View } from "react-native";
+import { Easing } from "react-native-reanimated";
 import { Card, IconButton } from "react-native-paper";
 import type { Theme } from "../../styles/theme";
 import { createStyles } from "./styles";

@@ -10,9 +10,13 @@ import {
   Text,
   View,
 } from "react-native";
+import AnimatedRollingNumber from "react-native-animated-rolling-numbers";
 import { Button, Card, Chip } from "react-native-paper";
 import type { Theme } from "../../styles/theme";
 import type { CalculationLine, Note } from "../../types";
+import { buildResultVM } from "../../ui/resultViewModel";
+import { useStickyUnits } from "../../ui/useStickyUnits";
+import { formatNumber } from "../../utils/calc/mathSugars";
 import { BottomSheetInputEditor } from "../BottomSheetInputEditor";
 import { createStyles } from "./styles";
 
@@ -25,6 +29,7 @@ interface CalculationSheetProps {
   onAddLine: () => void;
   onDeleteLine: (lineId: string) => void;
   onEditorOpenChange: (open: boolean) => void;
+  sheetId: string;
 }
 
 const LineRow: React.FC<{
@@ -32,8 +37,22 @@ const LineRow: React.FC<{
   line: CalculationLine;
   styles: ReturnType<typeof createStyles>;
   onOpenLine: (line: CalculationLine) => void;
-}> = ({ theme, line, styles, onOpenLine }) => {
+  sheetId: string;
+}> = ({ theme, line, styles, onOpenLine, sheetId }) => {
   const pressAnim = React.useRef(new Animated.Value(0)).current;
+  const sticky = useStickyUnits(String(sheetId ?? "default")); // se tiver um id em theme/context, melhor passar via prop
+  const [vm, setVM] = useState<any>(null);
+
+  useEffect(() => {
+    if (!line.result) {
+      setVM(null);
+      return;
+    }
+    buildResultVM(line.result, {
+      sheetId: String(sheetId ?? "default"),
+      sticky,
+    }).then(setVM);
+  }, [line.result, sheetId, sticky]);
 
   const handlePressIn = () =>
     Animated.spring(pressAnim, {
@@ -82,25 +101,124 @@ const LineRow: React.FC<{
           {hasResult ? (
             <>
               <View style={styles.resultContainer}>
-                <Text style={styles.resultPrimary}>
-                  {line.result?.formatted}
-                </Text>
-                {line.result?.unit ? (
-                  <Text style={styles.resultSecondary}>{line.result.unit}</Text>
+                {vm ? (
+                  <>
+                    <AnimatedRollingNumber
+                      value={Number(line.result?.value) || 0}
+                      formattedText={vm.primary.formatted}
+                      useGrouping
+                      textStyle={styles.resultPrimary}
+                      accessibilityLabel="Result value"
+                    />
+                    {vm.primary.unit ? (
+                      <Text style={styles.resultSecondary}>
+                        {vm.primary.unit}
+                      </Text>
+                    ) : null}
+                  </>
                 ) : null}
               </View>
 
-              {line.result?.conversions?.length ? (
+              {!!vm?.chips?.length ? (
                 <View style={styles.conversionChips}>
-                  {line.result.conversions.map((conversion) => (
+                  {line.result?.metadata?.deal &&
+                    (() => {
+                      const d = line.result.metadata.deal;
+                      const unitLabel = d.unitPrice?.per
+                        ? `/${d.unitPrice.per}`
+                        : "";
+                      return (
+                        <>
+                          {d.unitPrice != null && (
+                            <Chip
+                              key={`${line.id}-deal-unitprice`}
+                              compact
+                              mode="flat"
+                              style={styles.chipPaper}
+                              textStyle={styles.chipTextPaper}
+                              onPress={async () => {
+                                if (!vm?.stickyScope || !line.result) return;
+                                await sticky.setPreferredUnit(
+                                  vm.stickyScope,
+                                  `${d.unitPrice!.ccy}${unitLabel}`
+                                );
+                                const updated = await buildResultVM(
+                                  line.result,
+                                  {
+                                    sheetId: String(sheetId ?? "default"),
+                                    sticky,
+                                  }
+                                );
+                                setVM(updated);
+                              }}
+                              onLongPress={() => {
+                                // opcional: copiar texto
+                              }}
+                            >
+                              {`${formatNumber(d.unitPrice!.amount, 2)} ${
+                                d.unitPrice!.ccy
+                              }${unitLabel}`}
+                            </Chip>
+                          )}
+                          {d.total != null && (
+                            <Chip
+                              key={`${line.id}-deal-total`}
+                              compact
+                              mode="flat"
+                              style={styles.chipPaper}
+                              textStyle={styles.chipTextPaper}
+                              onPress={async () => {
+                                if (!vm?.stickyScope || !line.result) return;
+                                await sticky.setPreferredUnit(
+                                  vm.stickyScope,
+                                  d.total!.ccy
+                                );
+                                const updated = await buildResultVM(
+                                  line.result,
+                                  {
+                                    sheetId: String(sheetId ?? "default"),
+                                    sticky,
+                                  }
+                                );
+                                setVM(updated);
+                              }}
+                            >
+                              {`${formatNumber(d.total!.amount, 2)} ${
+                                d.total!.ccy
+                              } total`}
+                            </Chip>
+                          )}
+                        </>
+                      );
+                    })()}
+
+                  {vm.chips.map((conversion: any) => (
                     <Chip
                       key={`${line.id}-${conversion.unit}`}
                       compact
                       mode="flat"
                       style={styles.chipPaper}
                       textStyle={styles.chipTextPaper}
+                      onPress={async () => {
+                        if (!vm?.stickyScope || !line.result) return;
+                        await sticky.setPreferredUnit(
+                          vm.stickyScope,
+                          conversion.unit
+                        );
+                        const updated = await buildResultVM(line.result, {
+                          sheetId: String(sheetId ?? "default"),
+                          sticky,
+                        });
+                        setVM(updated);
+                      }}
                     >
-                      {conversion.display}
+                      <AnimatedRollingNumber
+                        value={0}
+                        formattedText={String(conversion.display).split(" ")[0]}
+                        textStyle={[styles.chipTextPaper, { marginBottom: -4 }]}
+                        accessibilityLabel={`Conversion ${conversion.display}`}
+                      />{" "}
+                      {conversion.unit}
                     </Chip>
                   ))}
                 </View>
@@ -212,6 +330,7 @@ export const CalculationSheet: React.FC<CalculationSheetProps> = ({
   onAddLine,
   onDeleteLine,
   onEditorOpenChange,
+  sheetId,
 }) => {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const placeholderColor = String(theme.colors.secondaryText);
@@ -288,6 +407,7 @@ export const CalculationSheet: React.FC<CalculationSheetProps> = ({
                   setEditingLine(l);
                   Keyboard.dismiss();
                 }}
+                sheetId={sheetId}
               />
             </SwipeableRow>
           );
@@ -324,6 +444,7 @@ export const CalculationSheet: React.FC<CalculationSheetProps> = ({
           onSave={handleEditorSave}
           onCancel={handleEditorCancel}
           onOpenChange={onEditorOpenChange}
+          sheetId={String(note.id ?? note.title ?? "default")}
         />
       )}
     </>
