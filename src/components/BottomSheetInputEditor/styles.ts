@@ -7,7 +7,8 @@ export const createStyles = (theme: Theme) =>
       flex: 1,
       paddingHorizontal: theme.spacing.lg,
       paddingTop: theme.spacing.md,
-      zIndex: 5,
+      // Avoid overlaying the BottomSheet footer; zIndex here can swallow footer touches.
+      // zIndex: 5,
     },
     input: {
       fontSize: 16,

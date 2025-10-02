@@ -34,10 +34,6 @@ import { useEvaluatedInput } from "../../hooks/useEvaluatedInput";
 import { useMarketData } from "../../hooks/useMarketData";
 import type { Theme } from "../../styles/theme";
 import type { CalculationLine } from "../../types";
-import { buildResultVM } from "../../ui/resultViewModel";
-import { useStickyUnits } from "../../ui/useStickyUnits";
-import { formatNumber } from "../../utils/calc/mathSugars";
-import { getAllVars } from "../../utils/calc/varStore";
 import { evaluateInput } from "../../utils/evaluator";
 import { createStyles } from "./styles";
 
@@ -48,7 +44,6 @@ interface BottomSheetInputEditorProps {
   onSave: (lineId: string, value: string) => void;
   onCancel: (lineId: string, valueSnapshot: string) => void;
   onOpenChange?: (open: boolean) => void;
-  sheetId: string;
 }
 
 export const BottomSheetInputEditor: React.FC<BottomSheetInputEditorProps> = ({
@@ -57,7 +52,6 @@ export const BottomSheetInputEditor: React.FC<BottomSheetInputEditorProps> = ({
   onSave,
   onCancel,
   onOpenChange,
-  sheetId,
 }) => {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const insets = useSafeAreaInsets();
@@ -72,41 +66,11 @@ export const BottomSheetInputEditor: React.FC<BottomSheetInputEditorProps> = ({
   const debouncedValue = useDebouncedValue(value, 50);
 
   const evalFn = useCallback(
-    (expr: string) => evaluateInput(expr, marketData, undefined, { sheetId }),
-    [marketData, sheetId]
+    (expr: string) => evaluateInput(expr, marketData),
+    [marketData]
   );
 
   const evalResult = useEvaluatedInput(debouncedValue, evalFn);
-
-  const sticky = useStickyUnits(sheetId);
-  const [vm, setVM] = useState<null | Awaited<
-    ReturnType<typeof buildResultVM>
-  >>(null);
-
-  const [varNames, setVarNames] = useState<string[]>([]);
-  useEffect(() => {
-    const varsObj = getAllVars({ sheetId });
-    setVarNames(Object.keys(varsObj));
-  }, [sheetId]);
-
-  const guessVarFromExpr = useCallback((expr: string, known: string[]) => {
-    const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const sorted = [...known].sort((a, b) => b.length - a.length);
-    return (
-      sorted.find((name) => new RegExp(`\\b${esc(name)}\\b`, "i").test(expr)) ||
-      null
-    );
-  }, []);
-
-  useEffect(() => {
-    const r = evalResult?.result;
-    if (!r) {
-      setVM(null);
-      return;
-    }
-    const varName = guessVarFromExpr(value, varNames) || undefined;
-    buildResultVM(r, { sheetId, sticky, variableName: varName }).then(setVM);
-  }, [evalResult?.result, sheetId, sticky, value, varNames, guessVarFromExpr]);
 
   const snapPoints = useMemo(() => ["96%"], []);
 
@@ -151,29 +115,6 @@ export const BottomSheetInputEditor: React.FC<BottomSheetInputEditorProps> = ({
       show.remove();
     };
   }, [onOpenChange, btnAnim]);
-
-  const handleChipPress = useCallback(
-    async (unit: string) => {
-      if (!vm?.stickyScope || !evalResult?.result) return;
-      await sticky.setPreferredUnit(vm.stickyScope, unit);
-      const varName = guessVarFromExpr(value, varNames) || undefined;
-      const updated = await buildResultVM(evalResult.result, {
-        sheetId,
-        sticky,
-        variableName: varName,
-      });
-      setVM(updated);
-    },
-    [
-      vm?.stickyScope,
-      evalResult?.result,
-      sheetId,
-      sticky,
-      value,
-      varNames,
-      guessVarFromExpr,
-    ]
-  );
 
   const handleDone = () => {
     Keyboard.dismiss();
@@ -335,110 +276,42 @@ export const BottomSheetInputEditor: React.FC<BottomSheetInputEditorProps> = ({
             </HelperText>
           ) : evalResult?.result ? (
             <View>
-              {vm ? (
-                <View>
-                  <View style={styles.resultRow}>
-                    <Text
-                      style={[
-                        styles.resultPrimary,
-                        { color: theme.colors.success },
-                      ]}
+              <View style={styles.resultRow}>
+                <Text
+                  style={[
+                    styles.resultPrimary,
+                    { color: theme.colors.success },
+                  ]}
+                >
+                  {evalResult.result.formatted}
+                </Text>
+                {evalResult.result.unit ? (
+                  <Text
+                    style={[
+                      styles.resultSecondary,
+                      { color: theme.colors.secondaryText },
+                    ]}
+                  >
+                    {evalResult.result.unit}
+                  </Text>
+                ) : null}
+              </View>
+
+              {evalResult.result.conversions?.length ? (
+                <View style={styles.chipsWrap}>
+                  {evalResult.result.conversions.map((c) => (
+                    <Chip
+                      key={`conv-${c.unit}`}
+                      mode="flat"
+                      compact
+                      onLongPress={() => copyToClipboard(String(c.display))}
+                      style={styles.chip}
+                      textStyle={styles.chipText}
+                      accessibilityLabel={`Conversion ${c.display}`}
                     >
-                      {vm.primary.formatted}
-                    </Text>
-                    {vm.primary.unit ? (
-                      <Text
-                        style={[
-                          styles.resultSecondary,
-                          { color: theme.colors.secondaryText },
-                        ]}
-                      >
-                        {vm.primary.unit}
-                      </Text>
-                    ) : null}
-                  </View>
-
-                  {evalResult?.result?.metadata?.deal ? (
-                    <View style={styles.chipsWrap}>
-                      {(() => {
-                        const d = evalResult.result.metadata.deal;
-                        // chip 1: unit price (ex.: 80 USD/bag)
-                        const unitLabel = d.unitPrice?.per
-                          ? `/${d.unitPrice.per}`
-                          : "";
-                        return (
-                          <>
-                            {d.unitPrice != null && (
-                              <Chip
-                                key="deal-unitprice"
-                                mode="flat"
-                                compact
-                                onPress={() =>
-                                  handleChipPress(
-                                    `${d.unitPrice!.ccy}${unitLabel}`
-                                  )
-                                }
-                                onLongPress={() =>
-                                  copyToClipboard(
-                                    `${formatNumber(d.unitPrice!.amount, 2)} ${
-                                      d.unitPrice!.ccy
-                                    }${unitLabel}`
-                                  )
-                                }
-                                style={styles.chip}
-                                textStyle={styles.chipText}
-                              >
-                                {`${formatNumber(d.unitPrice!.amount, 2)} ${
-                                  d.unitPrice!.ccy
-                                }${unitLabel}`}
-                              </Chip>
-                            )}
-                            {/* chip 2: total (ex.: 400 USD total) */}
-                            {d.total != null && (
-                              <Chip
-                                key="deal-total"
-                                mode="flat"
-                                compact
-                                onPress={() => handleChipPress(d.total!.ccy)}
-                                onLongPress={() =>
-                                  copyToClipboard(
-                                    `${formatNumber(d.total!.amount, 2)} ${
-                                      d.total!.ccy
-                                    } total`
-                                  )
-                                }
-                                style={styles.chip}
-                                textStyle={styles.chipText}
-                              >
-                                {`${formatNumber(d.total!.amount, 2)} ${
-                                  d.total!.ccy
-                                } total`}
-                              </Chip>
-                            )}
-                          </>
-                        );
-                      })()}
-                    </View>
-                  ) : null}
-
-                  {!!vm.chips?.length && (
-                    <View style={styles.chipsWrap}>
-                      {vm.chips.map((c) => (
-                        <Chip
-                          key={`conv-${c.unit}`}
-                          mode="flat"
-                          compact
-                          onPress={() => handleChipPress(c.unit)}
-                          onLongPress={() => copyToClipboard(String(c.display))}
-                          style={styles.chip}
-                          textStyle={styles.chipText}
-                          accessibilityLabel={`Conversion ${c.display}`}
-                        >
-                          {c.display}
-                        </Chip>
-                      ))}
-                    </View>
-                  )}
+                      {c.display}
+                    </Chip>
+                  ))}
                 </View>
               ) : null}
             </View>

@@ -444,7 +444,6 @@ export const CalculationSheet: React.FC<CalculationSheetProps> = ({
           onSave={handleEditorSave}
           onCancel={handleEditorCancel}
           onOpenChange={onEditorOpenChange}
-          sheetId={String(note.id ?? note.title ?? "default")}
         />
       )}
     </>
